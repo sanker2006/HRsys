@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "sourceMap": true
+  },
+  "include": ["src/**/*"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/db/check_*.ts",
+    "src/db/db_*.ts",
+    "src/db/find_phones.ts",
+    "src/db/insert_self_q.ts",
+    "src/db/migrate_*.ts",
+    "src/db/probe_*.ts",
+    "src/db/reset_*.ts",
+    "src/db/seed_self_q.ts",
+    "src/db/update_admin_pwd.ts",
+    "src/db/verify_admin_pwd.ts",
+    "src/test/**"
+  ]
+}

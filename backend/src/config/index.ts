@@ -1,0 +1,20 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
+const isProduction = process.env.NODE_ENV === 'production';
+const jwtSecret = process.env.JWT_SECRET || (isProduction ? '' : 'hr360-dev-secret');
+
+if (!jwtSecret) {
+  throw new Error('JWT_SECRET is required when NODE_ENV=production');
+}
+
+export const config = {
+  port: parseInt(process.env.PORT || '3000', 10),
+  isProduction,
+  jwtSecret,
+  jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
+  corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:5173,http://localhost:5174')
+    .split(',')
+    .map(origin => origin.trim())
+    .filter(Boolean),
+};

@@ -1,0 +1,15 @@
+{
+  "name": "hr-360-v2",
+  "private": true,
+  "version": "2.0.0",
+  "scripts": {
+    "build": "npm run build:backend && npm run build:admin && npm run build:h5",
+    "build:backend": "npm --prefix backend run build",
+    "build:admin": "npm --prefix admin run build",
+    "build:h5": "npm --prefix h5 run build",
+    "typecheck": "npm run build:backend && npm --prefix admin exec vue-tsc -b && npm --prefix h5 exec vue-tsc -b"
+  },
+  "devDependencies": {
+    "playwright": "^1.59.1"
+  }
+}

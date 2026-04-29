@@ -1,0 +1,55 @@
+/* HR-360 Admin 全局样式 */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: #F5F7FA;
+  color: #303133;
+}
+
+#app {
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Element Plus 覆盖 */
+.el-card {
+  border-radius: 8px !important;
+}
+
+.el-button {
+  border-radius: 6px !important;
+}
+
+.el-table {
+  border-radius: 8px !important;
+  overflow: hidden;
+}
+
+.el-table th.el-table__cell {
+  background-color: #FAFAFA !important;
+  color: #606266;
+  font-weight: 600;
+}
+
+/* 自定义滚动条 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #F5F7FA;
+}
+::-webkit-scrollbar-thumb {
+  background: #DCDFE6;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #C0C4CC;
+}

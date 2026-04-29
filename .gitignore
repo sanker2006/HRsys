@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*/dist/
+
+# Logs and runtime output
+*.log
+*.out
+server.log
+server-err.log
+debug.log
+
+# Local environment
+.env
+.env.*
+!.env.example
+
+# Local databases and generated artifacts
+backend/data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Screenshots and ad-hoc test captures
+*.png
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.claude/

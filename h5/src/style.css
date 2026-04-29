@@ -1,0 +1,55 @@
+/* HR-360 H5 全局样式 - 紫色主题 */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'PingFang SC', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background: #F7F8FA;
+  color: #333;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+/* Vant 紫色主题变量覆盖 */
+:root {
+  --van-primary-color: #667EEA;
+  --van-primary-disabled-color: #A5B4FC;
+  --van-button-primary-background: #667EEA;
+  --van-button-primary-border-color: #667EEA;
+  --van-cell-group-background: #fff;
+  --van-nav-bar-background: linear-gradient(135deg, #667EEA 0%, #764BA2 100%);
+  --van-tabs-default-color: #667EEA;
+}
+
+/* 紫色渐变背景工具类 */
+.purple-gradient-bg {
+  background: linear-gradient(135deg, #667EEA 0%, #764BA2 100%);
+}
+
+/* 底部安全区 */
+.safe-bottom {
+  padding-bottom: calc(68px + env(safe-area-inset-bottom, 0px));
+}
+
+/* 触摸优化 */
+button, a, .van-button {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* 自定义滚动条 */
+::-webkit-scrollbar {
+  display: none;
+}
+
+body {
+  -webkit-overflow-scrolling: touch;
+}
