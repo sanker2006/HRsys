@@ -14,17 +14,6 @@
       </div>
     </section>
 
-    <section v-if="relation" class="person-card">
-      <div class="person-line">
-        <div class="avatar">{{ targetName.charAt(0) }}</div>
-        <div class="person-main">
-          <div class="person-name">{{ targetName }}</div>
-          <div class="person-meta">只评价综合题目，不展示对方自评分</div>
-        </div>
-        <span class="status" :class="relation.status">{{ statusText(relation.status) }}</span>
-      </div>
-    </section>
-
     <section v-if="questions.length" class="question-group">
       <div class="group-title">综合评价</div>
       <article v-for="q in questions" :key="q.answer_seq" class="question-card">
@@ -85,12 +74,6 @@ function roleText(role: string) {
   if (role === 'manager') return '部门负责人'
   if (role === 'staff') return '员工'
   return role || '-'
-}
-
-function statusText(status: string) {
-  if (status === 'completed') return '已完成'
-  if (status === 'draft') return '草稿'
-  return '待评'
 }
 
 function formatNumber(value: number | string | null | undefined) {
@@ -229,34 +212,6 @@ watch(() => props.relationId, loadPage)
 .dock-score { flex: 0 0 auto; display: flex; align-items: baseline; gap: 3px; }
 .dock-score b { font-size: 36px; line-height: 1; font-weight: 900; font-variant-numeric: tabular-nums; }
 .dock-score span { font-size: 13px; color: rgba(255,255,255,.78); }
-.person-card {
-  margin: 14px 16px;
-  padding: 14px;
-  border-radius: 14px;
-  background: linear-gradient(180deg, var(--hr-surface-raised), var(--hr-surface));
-  border: 1px solid var(--hr-border-strong);
-  box-shadow: var(--hr-shadow-soft);
-}
-.person-line { display: flex; align-items: center; gap: 12px; }
-.avatar {
-  width: 48px;
-  height: 48px;
-  border-radius: 14px;
-  background: var(--hr-primary-soft);
-  color: var(--hr-accent-strong);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 900;
-  font-size: 19px;
-}
-.person-main { flex: 1; min-width: 0; }
-.person-name { font-size: 18px; font-weight: 900; color: var(--hr-text); }
-.person-meta { margin-top: 5px; font-size: 13px; color: var(--hr-muted); }
-.status { font-size: 12px; padding: 4px 9px; border-radius: 999px; white-space: nowrap; font-weight: 800; }
-.status.completed { color: var(--hr-success); background: #d9f0e4; }
-.status.draft { color: var(--hr-accent-strong); background: var(--hr-primary-soft); }
-.status.pending { color: #8a4d00; background: #f5e4bd; }
 .question-group { margin: 16px; }
 .group-title { margin: 18px 2px 10px; font-size: 17px; color: var(--hr-text); font-weight: 900; }
 .question-card {
