@@ -8,26 +8,32 @@
         <div class="dock-title">{{ targetName }}</div>
         <div class="dock-meta">{{ relation.target_department }} · {{ relation.target_position || roleText(relation.target_level) }}</div>
       </div>
-      <div class="dock-score">
-        <b>{{ displayTotal }}</b>
-        <span>分</span>
+      <div class="dock-score-grid">
+        <div class="dock-score self-score">
+          <span>员工自评</span>
+          <b>{{ formatPlainScore(selfTotal) }}</b>
+        </div>
+        <div class="dock-score manager-score">
+          <span>主管评分</span>
+          <b>{{ displayTotal }}</b>
+        </div>
       </div>
     </section>
 
     <section v-if="quota" class="quota-note">
       <div class="quota-title">当前部门分档</div>
       <div class="quota-grid">
-        <div>
+        <div class="quota-card high">
           <span>81-100</span>
           <b>{{ quota.high }}/{{ quota.highMax }}</b>
-          <em>剩 {{ quota.highRemain }}</em>
+          <em>剩余 {{ quota.highRemain }}</em>
         </div>
-        <div>
+        <div class="quota-card mid">
           <span>71-80</span>
           <b>{{ quota.mid }}/{{ quota.midMax }}</b>
-          <em>剩 {{ quota.midRemain }}</em>
+          <em>剩余 {{ quota.midRemain }}</em>
         </div>
-        <div>
+        <div class="quota-card low">
           <span>0-70</span>
           <b>{{ quota.low }}</b>
           <em>还需 {{ quota.lowNeed }}</em>
@@ -38,17 +44,6 @@
     <van-notice-bar v-if="blockedReason && !isCompleted" color="#7c4a03" background="#f5e4bd">
       {{ blockedReason }}
     </van-notice-bar>
-
-    <section v-if="relation" class="person-card">
-      <div class="person-line">
-        <div class="avatar">{{ targetName.charAt(0) }}</div>
-        <div class="person-main">
-          <div class="person-name">{{ targetName }}</div>
-          <div class="person-meta">员工自评 {{ formatScore(selfTotal) }}</div>
-        </div>
-        <span class="status" :class="relation.status">{{ statusText(relation.status) }}</span>
-      </div>
-    </section>
 
     <section v-if="performanceQuestions.length" class="question-group">
       <div class="group-title">业绩评价</div>
@@ -130,14 +125,8 @@ function roleText(role: string) {
   return role || '-'
 }
 
-function statusText(status: string) {
-  if (status === 'completed') return '已完成'
-  if (status === 'draft') return '草稿'
-  return '待评'
-}
-
-function formatScore(score: number | null | undefined) {
-  return score === null || score === undefined ? '-' : `${Number(score).toFixed(1)} 分`
+function formatPlainScore(score: number | null | undefined) {
+  return score === null || score === undefined ? '-' : Number(score).toFixed(1)
 }
 
 function formatNumber(value: number | string | null | undefined) {
@@ -248,7 +237,7 @@ watch(() => props.relationId, loadPage)
   background:
     radial-gradient(circle at 100% 12%, rgba(3, 100, 134, .10), transparent 34%),
     var(--hr-bg);
-  padding-top: 150px;
+  padding-top: 314px;
   padding-bottom: calc(108px + env(safe-area-inset-bottom, 0px));
 }
 .nav {
@@ -270,50 +259,61 @@ watch(() => props.relationId, loadPage)
   align-items: center;
   justify-content: space-between;
   gap: 14px;
+  min-height: 94px;
   padding: 14px 16px 16px;
   color: #fff;
-  background: linear-gradient(145deg, #0f3b5f 0%, #0369a1 100%);
-  box-shadow: 0 10px 26px rgba(15, 23, 42, .14);
+  background:
+    radial-gradient(circle at 88% 0%, rgba(103, 232, 249, .22), transparent 34%),
+    linear-gradient(145deg, #0d334f 0%, #036486 100%);
+  box-shadow: 0 12px 28px rgba(8, 31, 49, .18);
 }
+.score-dock > div:first-child { min-width: 0; }
 .dock-kicker { font-size: 12px; color: rgba(255,255,255,.72); }
+.dock-title, .dock-meta, .dock-kicker { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dock-title { margin-top: 3px; font-size: 18px; line-height: 1.25; font-weight: 900; }
 .dock-meta { margin-top: 3px; color: rgba(255,255,255,.70); font-size: 12px; }
-.dock-score { flex: 0 0 auto; display: flex; align-items: baseline; gap: 3px; }
-.dock-score b { font-size: 36px; line-height: 1; font-weight: 900; font-variant-numeric: tabular-nums; }
-.dock-score span { font-size: 13px; color: rgba(255,255,255,.78); }
-.quota-note, .person-card {
-  margin: 14px 16px;
+.dock-score-grid {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(72px, 1fr));
+  gap: 8px;
+}
+.dock-score {
+  min-width: 72px;
+  padding: 8px 9px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.18);
+  background: rgba(255,255,255,.10);
+  text-align: right;
+}
+.dock-score b { display: block; margin-top: 3px; font-size: 28px; line-height: 1; font-weight: 900; font-variant-numeric: tabular-nums; }
+.dock-score span { display: block; font-size: 11px; color: rgba(255,255,255,.78); font-weight: 800; }
+.manager-score {
+  background: rgba(103, 232, 249, .18);
+  border-color: rgba(103,232,249,.34);
+}
+.quota-note {
+  position: fixed;
+  top: 170px;
+  left: 0;
+  right: 0;
+  z-index: 54;
+  margin: 0;
   padding: 14px;
-  border-radius: 14px;
-  background: linear-gradient(180deg, var(--hr-surface-raised), var(--hr-surface));
-  border: 1px solid var(--hr-border-strong);
-  box-shadow: var(--hr-shadow-soft);
+  border-radius: 0 0 22px 22px;
+  background:
+    linear-gradient(180deg, rgba(243,248,251,.98), rgba(220,232,242,.98));
+  border-bottom: 1px solid #aebfd0;
+  box-shadow: 0 12px 26px rgba(8, 31, 49, .13);
 }
-.quota-title { font-size: 14px; font-weight: 900; color: var(--hr-text); margin-bottom: 10px; }
+.quota-title { font-size: 15px; font-weight: 900; color: var(--hr-text); margin: 0 2px 10px; }
 .quota-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.quota-grid div { border-radius: 12px; background: var(--hr-surface-strong); padding: 10px; border: 1px solid rgba(201,215,229,.9); }
+.quota-grid div { border-radius: 13px; background: var(--hr-surface-strong); padding: 10px; border: 1px solid rgba(201,215,229,.9); }
+.quota-card.high { background: linear-gradient(180deg, #e6f4ee, #d5eadf); border-color: #9fd4b8; }
+.quota-card.mid { background: linear-gradient(180deg, #f5ead0, #ecdbb8); border-color: #d1ae68; }
+.quota-card.low { background: linear-gradient(180deg, #dceaf8, #cbdceb); border-color: #93b3ce; }
 .quota-grid span, .quota-grid em { display: block; font-size: 11px; color: var(--hr-muted); font-style: normal; }
-.quota-grid b { display: block; margin: 4px 0 2px; font-size: 18px; color: var(--hr-text); font-variant-numeric: tabular-nums; }
-.person-line { display: flex; align-items: center; gap: 12px; }
-.avatar {
-  width: 48px;
-  height: 48px;
-  border-radius: 14px;
-  background: var(--hr-primary-soft);
-  color: var(--hr-accent-strong);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 900;
-  font-size: 19px;
-}
-.person-main { flex: 1; min-width: 0; }
-.person-name { font-size: 18px; font-weight: 900; color: var(--hr-text); }
-.person-meta { margin-top: 5px; font-size: 13px; color: var(--hr-muted); }
-.status { font-size: 12px; padding: 4px 9px; border-radius: 999px; white-space: nowrap; font-weight: 800; }
-.status.completed { color: var(--hr-success); background: #d9f0e4; }
-.status.draft { color: var(--hr-accent-strong); background: var(--hr-primary-soft); }
-.status.pending { color: #8a4d00; background: #f5e4bd; }
+.quota-grid b { display: block; margin: 5px 0 2px; font-size: 20px; color: var(--hr-text); font-variant-numeric: tabular-nums; }
 .question-group { margin: 16px; }
 .group-title { margin: 18px 2px 10px; font-size: 17px; color: var(--hr-text); font-weight: 900; }
 .question-card {
