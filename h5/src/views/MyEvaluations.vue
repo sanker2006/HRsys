@@ -57,7 +57,7 @@
                 size="small"
                 :type="r.status === 'draft' ? 'default' : 'primary'"
                 :plain="r.status === 'draft'"
-                @click="router.push(`/eval-form/${r.id}`)"
+                @click="router.push(evalPath(r))"
                 class="action-btn"
               >
                 {{ r.status === 'draft' ? '继续' : '去评价' }}
@@ -104,6 +104,12 @@ function statusText(status: string) {
   return '待评'
 }
 
+function evalPath(row: any) {
+  if (row.eval_type === 'peer') return `/peer-eval/${row.batchId}/${row.id}`
+  if (row.eval_type === 'downward') return `/downward-eval/${row.batchId}/${row.id}`
+  return `/eval-form/${row.id}`
+}
+
 async function loadAll() {
   loading.value = true
   try {
@@ -112,16 +118,13 @@ async function loadAll() {
     const results = await Promise.all(
       batches.map(async (b) => {
         try {
-          const p: any = await h5Api.getProgress(b.id)
-          const rels: any[] = p.data?.grouped || {}
-          const flat = Object.entries(rels).flatMap(([type, arr]: [string, any]) =>
-            (arr as any[]).map(r => ({
-              ...r,
-              batchId: b.id,
-              batchName: b.name,
-              eval_type_text: type === 'self' ? '自评' : type === 'peer' ? '同层互评' : '向下评估',
-            }))
-          )
+          const relRes: any = await h5Api.getMyRelations(b.id)
+          const flat = (relRes.data?.list || []).map((r: any) => ({
+            ...r,
+            batchId: b.id,
+            batchName: b.name,
+            eval_type_text: evalTypeText(r.eval_type),
+          }))
           return flat.length > 0 ? { batchId: b.id, batchName: b.name, relations: flat } : null
         } catch {
           return null
@@ -135,6 +138,13 @@ async function loadAll() {
   }
 }
 
+function evalTypeText(type: string) {
+  if (type === 'self') return '自评'
+  if (type === 'peer') return '同级互评'
+  if (type === 'downward') return '向下评价'
+  return type || '评价'
+}
+
 onMounted(async () => {
   showLoadingToast({ message: '加载中...', forbidClick: true })
   try { await loadAll() }
@@ -145,18 +155,18 @@ onMounted(async () => {
 <style scoped>
 .my-page {
   min-height: 100dvh;
-  background: #f5f7fa;
+  background: var(--hr-bg);
 }
 .header {
-  background: linear-gradient(145deg, #0f2744 0%, #1a3a6b 40%, #1a365d 100%);
+  background: linear-gradient(145deg, #0f172a 0%, #075985 100%);
   color: #fff;
   padding: calc(env(safe-area-inset-top) + 20px) 20px 24px;
-  border-radius: 0 0 24px 24px;
-  box-shadow: 0 4px 20px rgba(15, 39, 68, 0.3);
+  border-radius: 0 0 22px 22px;
+  box-shadow: var(--hr-shadow);
 }
 .header h2 {
   font-size: 22px;
-  font-weight: 600;
+  font-weight: 900;
   margin-bottom: 4px;
 }
 .header p {
@@ -175,42 +185,43 @@ onMounted(async () => {
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  font-weight: 600;
-  color: #5a6a7a;
+  font-weight: 800;
+  color: var(--hr-muted);
   margin-bottom: 8px;
   padding-left: 4px;
 }
 .eval-list {
-  background: #fff;
-  border-radius: 14px;
+  background: var(--hr-surface);
+  border: 1px solid rgba(226,232,240,.92);
+  border-radius: 10px;
   overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  box-shadow: var(--hr-shadow-soft);
 }
 .eval-item {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 14px 16px;
-  border-bottom: 1px solid #f5f7fa;
+  border-bottom: 1px solid var(--hr-border);
 }
 .eval-item:last-child { border-bottom: none; }
 .eval-avatar {
   width: 40px;
   height: 40px;
-  border-radius: 50%;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 16px;
-  font-weight: 700;
+  font-weight: 900;
   flex-shrink: 0;
 }
-.eval-avatar.done { background: rgba(7,193,96,0.1); color: #07c160; }
-.eval-avatar.draft { background: rgba(44,82,130,0.1); color: #2c5282; }
+.eval-avatar.done { background: rgba(7,193,96,0.1); color: var(--hr-success); }
+.eval-avatar.draft { background: var(--hr-primary-soft); color: var(--hr-accent-strong); }
 .eval-avatar.pending { background: rgba(232,191,90,0.12); color: #b88a1e; }
 .eval-info { flex: 1; min-width: 0; }
-.eval-name { font-size: 15px; font-weight: 600; color: #1a2332; margin-bottom: 2px; }
-.eval-type { font-size: 12px; color: #8a96a6; }
+.eval-name { font-size: 16px; font-weight: 800; color: var(--hr-text); margin-bottom: 3px; }
+.eval-type { font-size: 12px; color: var(--hr-muted); }
 .eval-right {
   display: flex;
   align-items: center;
@@ -219,29 +230,29 @@ onMounted(async () => {
 }
 .status-text {
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 800;
 }
-.status-text.done { color: #07c160; }
-.status-text.draft { color: #2c5282; }
+.status-text.done { color: var(--hr-success); }
+.status-text.draft { color: var(--hr-accent-strong); }
 .status-text.pending { color: #b88a1e; }
 .action-btn {
-  border-radius: 16px !important;
+  border-radius: 999px !important;
   font-size: 12px;
-  height: 28px;
+  height: 30px;
   padding: 0 12px;
 }
 .done-icon {
   width: 32px;
   height: 32px;
-  border-radius: 50%;
+  border-radius: 10px;
   background: rgba(7,193,96,0.1);
-  color: #07c160;
+  color: var(--hr-success);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 .empty { text-align: center; padding: 48px 24px; }
 .empty-icon { margin-bottom: 16px; }
-.empty-title { font-size: 16px; font-weight: 600; color: #3a4555; margin: 0 0 6px; }
-.empty-desc { font-size: 13px; color: #9aa5b4; margin: 0; }
+.empty-title { font-size: 16px; font-weight: 800; color: var(--hr-text); margin: 0 0 6px; }
+.empty-desc { font-size: 13px; color: var(--hr-muted); margin: 0; }
 </style>

@@ -57,7 +57,7 @@ watch(() => route.path, (p) => {
 <style scoped>
 .tab-layout {
   min-height: 100dvh;
-  background: #f5f7fa;
+  background: var(--hr-bg);
 }
 .page-content {
   padding-bottom: 72px;
@@ -90,9 +90,10 @@ watch(() => route.path, (p) => {
 
 /* TabBar */
 .tab-bar {
-  --van-tabbar-item-active-color: #2c5282;
-  --van-tabbar-item-inactive-color: #9aa5b4;
-  box-shadow: 0 -1px 16px rgba(0, 0, 0, 0.06);
+  --van-tabbar-item-active-color: var(--hr-accent-strong);
+  --van-tabbar-item-inactive-color: var(--hr-faint);
+  border-top: 1px solid var(--hr-border);
+  box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.08);
 }
 .tab-bar :deep(.van-tabbar-item__icon svg) {
   transition: transform 0.2s ease;

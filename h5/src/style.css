@@ -1,51 +1,103 @@
-/* HR-360 H5 全局样式 - 紫色主题 */
-
 * {
   box-sizing: border-box;
 }
 
+:root {
+  --hr-primary: #0f172a;
+  --hr-primary-soft: #e7edf5;
+  --hr-accent: #0369a1;
+  --hr-accent-strong: #075985;
+  --hr-success: #0f8a5f;
+  --hr-warning: #b7791f;
+  --hr-danger: #dc2626;
+  --hr-bg: #f6f8fb;
+  --hr-surface: #ffffff;
+  --hr-surface-strong: #f8fafc;
+  --hr-border: #e2e8f0;
+  --hr-text: #0f172a;
+  --hr-muted: #64748b;
+  --hr-faint: #94a3b8;
+  --hr-radius: 10px;
+  --hr-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+  --hr-shadow-soft: 0 4px 16px rgba(15, 23, 42, 0.06);
+
+  --van-primary-color: var(--hr-accent);
+  --van-primary-disabled-color: #9ec9e3;
+  --van-button-primary-background: var(--hr-accent);
+  --van-button-primary-border-color: var(--hr-accent);
+  --van-tabs-default-color: var(--hr-accent);
+  --van-nav-bar-background: var(--hr-surface);
+  --van-nav-bar-title-text-color: var(--hr-text);
+  --van-nav-bar-icon-color: var(--hr-text);
+  --van-slider-active-background: var(--hr-accent);
+  --van-slider-inactive-background: #dbe5ef;
+  --van-slider-button-width: 22px;
+  --van-slider-button-height: 22px;
+  --van-radius-md: 10px;
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+}
+
 body {
   margin: 0;
-  font-family: 'PingFang SC', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-family: "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
-  background: #F7F8FA;
-  color: #333;
+  background:
+    radial-gradient(circle at 8% 0%, rgba(3, 105, 161, 0.10), transparent 28%),
+    linear-gradient(180deg, #f8fafc 0%, #eef3f8 100%);
+  color: var(--hr-text);
   max-width: 100%;
   overflow-x: hidden;
 }
 
-#app {
-  min-height: 100vh;
-}
-
-/* Vant 紫色主题变量覆盖 */
-:root {
-  --van-primary-color: #667EEA;
-  --van-primary-disabled-color: #A5B4FC;
-  --van-button-primary-background: #667EEA;
-  --van-button-primary-border-color: #667EEA;
-  --van-cell-group-background: #fff;
-  --van-nav-bar-background: linear-gradient(135deg, #667EEA 0%, #764BA2 100%);
-  --van-tabs-default-color: #667EEA;
-}
-
-/* 紫色渐变背景工具类 */
-.purple-gradient-bg {
-  background: linear-gradient(135deg, #667EEA 0%, #764BA2 100%);
-}
-
-/* 底部安全区 */
-.safe-bottom {
-  padding-bottom: calc(68px + env(safe-area-inset-bottom, 0px));
-}
-
-/* 触摸优化 */
-button, a, .van-button {
+button,
+a,
+.van-button {
   min-height: 44px;
   min-width: 44px;
+  touch-action: manipulation;
 }
 
-/* 自定义滚动条 */
+.van-nav-bar {
+  border-bottom: 1px solid rgba(226, 232, 240, 0.82);
+  background: #ffffff !important;
+  color: var(--hr-text);
+}
+
+.van-nav-bar__content {
+  background: #ffffff;
+}
+
+.van-nav-bar__title {
+  font-weight: 800;
+  color: var(--hr-text) !important;
+}
+
+.van-nav-bar .van-icon {
+  color: var(--hr-accent) !important;
+}
+
+.van-button {
+  font-weight: 700;
+}
+
+.van-button--primary {
+  box-shadow: 0 8px 20px rgba(3, 105, 161, 0.18);
+}
+
+.van-slider__button {
+  border: 3px solid #ffffff;
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.20);
+}
+
+.safe-bottom {
+  padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+}
+
 ::-webkit-scrollbar {
   display: none;
 }

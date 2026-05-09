@@ -19,7 +19,15 @@ api.interceptors.request.use(config => {
 
 // 响应拦截器
 api.interceptors.response.use(
-  res => res.data,
+  res => {
+    const payload = res.data
+    if (payload && typeof payload.code === 'number' && payload.code !== 0) {
+      const msg = payload.message || '操作失败'
+      ElMessage.error(msg)
+      return Promise.reject(new Error(msg))
+    }
+    return payload
+  },
   err => {
     if (err.response?.status === 401) {
       localStorage.removeItem('admin_token')

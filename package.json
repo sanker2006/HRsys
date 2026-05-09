@@ -7,6 +7,7 @@
     "build:backend": "npm --prefix backend run build",
     "build:admin": "npm --prefix admin run build",
     "build:h5": "npm --prefix h5 run build",
+    "test:integration": "node scripts/integration-test.mjs",
     "typecheck": "npm run build:backend && npm --prefix admin exec vue-tsc -b && npm --prefix h5 exec vue-tsc -b"
   },
   "devDependencies": {

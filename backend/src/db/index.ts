@@ -1,5 +1,5 @@
 import initSqlJs, { Database } from 'sql.js';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import bcrypt from 'bcryptjs';
@@ -8,6 +8,22 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const DB_PATH = process.env.DB_PATH || join(process.cwd(), 'data', 'hr360.db');
 
 let db: Database;
+let saveTimer: NodeJS.Timeout | null = null;
+let dirty = false;
+
+const SAVE_DEBOUNCE_MS = parseInt(process.env.DB_SAVE_DEBOUNCE_MS || '200', 10);
+
+function hasColumn(table: string, column: string): boolean {
+  const result = db.exec(`PRAGMA table_info(${table})`);
+  const rows = result[0]?.values ?? [];
+  return rows.some(row => row[1] === column);
+}
+
+function addColumnIfMissing(table: string, column: string, definition: string): void {
+  if (!hasColumn(table, column)) {
+    db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
 
 function readSchema(): string {
   const candidates = [
@@ -39,6 +55,17 @@ export async function initDb(): Promise<void> {
     }
   }
 
+  addColumnIfMissing('self_question', 'comp_content_1', 'TEXT');
+  addColumnIfMissing('self_question', 'comp_content_2', 'TEXT');
+  addColumnIfMissing('self_question', 'comp_content_3', 'TEXT');
+  addColumnIfMissing('self_question', 'comp_content_4', 'TEXT');
+  addColumnIfMissing('self_question', 'comp_content_5', 'TEXT');
+  addColumnIfMissing('self_question', 'comp_weight_1', 'REAL');
+  addColumnIfMissing('self_question', 'comp_weight_2', 'REAL');
+  addColumnIfMissing('self_question', 'comp_weight_3', 'REAL');
+  addColumnIfMissing('self_question', 'comp_weight_4', 'REAL');
+  addColumnIfMissing('self_question', 'comp_weight_5', 'REAL');
+
   db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_user_phone_idcard ON app_user(phone, id_card_tail)');
 
   const adminResult = db.exec("SELECT id FROM app_user WHERE employee_no = 'admin'");
@@ -61,6 +88,41 @@ export function getDb(): Database {
 
 export function saveDb(): void {
   if (!db) return;
-  mkdirSync(dirname(DB_PATH), { recursive: true });
-  writeFileSync(DB_PATH, Buffer.from(db.export()));
+  dirty = true;
+  if (process.env.DB_SAVE_MODE === 'immediate' || SAVE_DEBOUNCE_MS <= 0) {
+    flushDb();
+    return;
+  }
+  if (saveTimer) return;
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    flushDb();
+  }, SAVE_DEBOUNCE_MS);
 }
+
+export function flushDb(): void {
+  if (!db || !dirty) return;
+  mkdirSync(dirname(DB_PATH), { recursive: true });
+  const tmpPath = `${DB_PATH}.${process.pid}.tmp`;
+  writeFileSync(tmpPath, Buffer.from(db.export()));
+  renameSync(tmpPath, DB_PATH);
+  dirty = false;
+}
+
+function flushBeforeExit(): void {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  flushDb();
+}
+
+process.once('beforeExit', flushBeforeExit);
+process.once('SIGINT', () => {
+  flushBeforeExit();
+  process.exit(0);
+});
+process.once('SIGTERM', () => {
+  flushBeforeExit();
+  process.exit(0);
+});

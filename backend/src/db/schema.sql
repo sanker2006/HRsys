@@ -26,6 +26,15 @@ CREATE TABLE IF NOT EXISTS app_user (
     UNIQUE(phone, id_card_tail)
 );
 
+CREATE TABLE IF NOT EXISTS division_leader_department (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id       INTEGER NOT NULL,
+    department    TEXT    NOT NULL,
+    created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (user_id) REFERENCES app_user(id) ON DELETE CASCADE,
+    UNIQUE(user_id, department)
+);
+
 -- 2. batch 批次表
 CREATE TABLE IF NOT EXISTS batch (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -95,6 +104,16 @@ CREATE TABLE IF NOT EXISTS self_question (
     weight_8    REAL,
     weight_9    REAL,
     weight_10   REAL,
+    comp_content_1 TEXT,
+    comp_content_2 TEXT,
+    comp_content_3 TEXT,
+    comp_content_4 TEXT,
+    comp_content_5 TEXT,
+    comp_weight_1  REAL,
+    comp_weight_2  REAL,
+    comp_weight_3  REAL,
+    comp_weight_4  REAL,
+    comp_weight_5  REAL,
     created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
     updated_at  TEXT    NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (batch_id) REFERENCES batch(id) ON DELETE CASCADE,

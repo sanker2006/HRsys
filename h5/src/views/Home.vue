@@ -84,9 +84,9 @@
             <van-progress
               :percentage="batch.progress"
               :pivot-text="`${batch.progress}%`"
-              :color="batch.progress >= 100 ? '#07c160' : '#2c5282'"
+              :color="batch.progress >= 100 ? '#0f8a5f' : '#0369a1'"
               :track-color="'rgba(0,0,0,0.08)'"
-              :pivot-color="batch.progress >= 100 ? '#07c160' : '#2c5282'"
+              :pivot-color="batch.progress >= 100 ? '#0f8a5f' : '#0369a1'"
             />
             <span class="progress-label">{{ batch.completed || 0 }}/{{ batch.total || 0 }} 项已完成</span>
           </div>
@@ -117,9 +117,9 @@ const userName = ref('')
 
 const greeting = computed(() => {
   const h = new Date().getHours()
-  if (h < 12) return '上午好，今日工作加油 👋'
-  if (h < 18) return '下午好，继续保持 ✨'
-  return '晚上好，辛苦啦 🌙'
+  if (h < 12) return '上午好，今日待办已为你整理'
+  if (h < 18) return '下午好，继续完成本批次评价'
+  return '晚上好，请确认今日评价进度'
 })
 
 const summary = computed(() => {
@@ -196,16 +196,16 @@ onMounted(async () => {
 <style scoped>
 .home-page {
   min-height: 100dvh;
-  background: #f5f7fa;
+  background: var(--hr-bg);
 }
 
 /* 头部 */
 .header {
-  background: linear-gradient(145deg, #0f2744 0%, #1a3a6b 40%, #1a365d 100%);
+  background: linear-gradient(145deg, #0f172a 0%, #075985 100%);
   color: #fff;
   padding: calc(env(safe-area-inset-top) + 20px) 20px 24px;
-  border-radius: 0 0 24px 24px;
-  box-shadow: 0 4px 20px rgba(15, 39, 68, 0.3);
+  border-radius: 0 0 22px 22px;
+  box-shadow: var(--hr-shadow);
 }
 
 .user-card {
@@ -218,7 +218,7 @@ onMounted(async () => {
 .user-avatar {
   width: 48px;
   height: 48px;
-  border-radius: 50%;
+  border-radius: 14px;
   background: linear-gradient(135deg, rgba(255,255,255,0.25), rgba(255,255,255,0.1));
   border: 2px solid rgba(255,255,255,0.3);
   display: flex;
@@ -236,7 +236,7 @@ onMounted(async () => {
 }
 .user-info h2 {
   font-size: 20px;
-  font-weight: 600;
+  font-weight: 900;
   margin-bottom: 3px;
 }
 .user-info p {
@@ -267,9 +267,10 @@ onMounted(async () => {
 .summary-strip {
   display: flex;
   align-items: center;
-  background: rgba(255,255,255,0.08);
-  border-radius: 12px;
-  padding: 14px 0;
+  background: rgba(255,255,255,0.10);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 10px;
+  padding: 15px 0;
   margin-top: 4px;
 }
 .summary-item {
@@ -282,12 +283,12 @@ onMounted(async () => {
 }
 .summary-num {
   font-size: 24px;
-  font-weight: 700;
+  font-weight: 900;
   color: #fff;
   line-height: 1;
 }
-.summary-num.done { color: #7dd87d; }
-.summary-num.pending { color: #f0c27d; }
+.summary-num.done { color: #86efac; }
+.summary-num.pending { color: #fde68a; }
 .summary-label {
   font-size: 11px;
   color: rgba(255,255,255,0.55);
@@ -307,17 +308,18 @@ onMounted(async () => {
 .batch-item {
   display: flex;
   align-items: center;
-  background: #fff;
-  border-radius: 14px;
+  background: var(--hr-surface);
+  border: 1px solid rgba(226,232,240,.92);
+  border-radius: 10px;
   margin-bottom: 12px;
   overflow: hidden;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  box-shadow: var(--hr-shadow-soft);
   cursor: pointer;
   transition: all 0.2s ease;
 }
 .batch-item:active {
-  transform: scale(0.98);
-  box-shadow: 0 1px 6px rgba(0,0,0,0.08);
+  transform: scale(0.985);
+  box-shadow: 0 2px 10px rgba(15,23,42,.08);
 }
 
 .batch-accent {
@@ -325,8 +327,8 @@ onMounted(async () => {
   align-self: stretch;
   flex-shrink: 0;
 }
-.status-active .batch-accent { background: #2c5282; }
-.status-done .batch-accent { background: #07c160; }
+.status-active .batch-accent { background: var(--hr-accent); }
+.status-done .batch-accent { background: var(--hr-success); }
 .status-pending .batch-accent { background: #e8bf5a; }
 
 .batch-body {
@@ -342,9 +344,9 @@ onMounted(async () => {
   margin-bottom: 6px;
 }
 .batch-name {
-  font-size: 15px;
-  font-weight: 600;
-  color: #1a2332;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--hr-text);
   margin: 0;
   white-space: nowrap;
   overflow: hidden;
@@ -360,12 +362,12 @@ onMounted(async () => {
   flex-shrink: 0;
 }
 .status-active .batch-badge {
-  background: rgba(44,82,130,0.1);
-  color: #2c5282;
+  background: var(--hr-primary-soft);
+  color: var(--hr-accent-strong);
 }
 .status-done .batch-badge {
   background: rgba(7,193,96,0.1);
-  color: #07c160;
+  color: var(--hr-success);
 }
 .status-pending .batch-badge {
   background: rgba(232,191,90,0.12);
@@ -380,7 +382,7 @@ onMounted(async () => {
   align-items: center;
   gap: 4px;
   font-size: 12px;
-  color: #8a96a6;
+  color: var(--hr-muted);
 }
 
 .batch-progress {
@@ -390,7 +392,7 @@ onMounted(async () => {
 }
 .progress-label {
   font-size: 11px;
-  color: #8a96a6;
+  color: var(--hr-muted);
 }
 
 .batch-arrow {
@@ -410,12 +412,12 @@ onMounted(async () => {
 .empty-title {
   font-size: 16px;
   font-weight: 600;
-  color: #3a4555;
+  color: var(--hr-text);
   margin: 0 0 6px;
 }
 .empty-desc {
   font-size: 13px;
-  color: #9aa5b4;
+  color: var(--hr-muted);
   margin: 0;
 }
 </style>

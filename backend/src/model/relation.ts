@@ -6,7 +6,7 @@ export interface RelationRow {
   batch_id: number;
   evaluator_id: number;
   target_id: number;
-  role_type: 'leader' | 'manager' | 'staff';
+  role_type: 'main_leader' | 'division_leader' | 'leader' | 'manager' | 'staff';
   eval_type: 'self' | 'peer' | 'downward';
   status: 'pending' | 'draft' | 'completed';
   is_anonymous: number;

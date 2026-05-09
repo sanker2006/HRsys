@@ -30,6 +30,18 @@ const router = createRouter({
       props: true,
     },
     {
+      path: '/downward-eval/:batchId/:relationId',
+      name: 'DownwardEval',
+      component: () => import('../views/DownwardEval.vue'),
+      props: true,
+    },
+    {
+      path: '/peer-eval/:batchId/:relationId',
+      name: 'PeerEval',
+      component: () => import('../views/PeerEval.vue'),
+      props: true,
+    },
+    {
       path: '/batch-eval/:batchId/:type',
       name: 'BatchEval',
       component: () => import('../views/BatchEval.vue'),

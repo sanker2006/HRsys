@@ -15,7 +15,15 @@ api.interceptors.request.use(config => {
 })
 
 api.interceptors.response.use(
-  res => res.data,
+  res => {
+    const payload = res.data
+    if (payload && typeof payload.code === 'number' && payload.code !== 0) {
+      const msg = payload.message || '操作失败'
+      showToast(msg)
+      return Promise.reject(new Error(msg))
+    }
+    return payload
+  },
   err => {
     if (err.response?.status === 401) {
       localStorage.removeItem('h5_token')

@@ -107,7 +107,9 @@ async function handleLogin() {
 <style scoped>
 .login-page {
   min-height: 100dvh;
-  background: #f0f4f8;
+  background:
+    radial-gradient(circle at 50% 8%, rgba(3,105,161,.14), transparent 34%),
+    var(--hr-bg);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -119,7 +121,7 @@ async function handleLogin() {
 /* 顶部品牌 */
 .top-brand {
   text-align: center;
-  color: #1a2332;
+  color: var(--hr-text);
   margin-bottom: 32px;
 }
 .brand-icon {
@@ -127,14 +129,14 @@ async function handleLogin() {
 }
 .brand-title {
   font-size: 28px;
-  font-weight: 800;
-  color: #1a365d;
+  font-weight: 900;
+  color: var(--hr-primary);
   margin: 0 0 6px;
   letter-spacing: 3px;
 }
 .brand-sub {
   font-size: 13px;
-  color: #8a96a6;
+  color: var(--hr-muted);
   margin: 0;
   letter-spacing: 1px;
 }
@@ -143,12 +145,13 @@ async function handleLogin() {
 .login-card {
   width: 100%;
   max-width: 340px;
-  background: #fff;
-  border-radius: 20px;
+  background: rgba(255,255,255,.96);
+  border: 1px solid rgba(226,232,240,.92);
+  border-radius: 14px;
   padding: 28px 24px 24px;
   box-shadow:
-    0 4px 24px rgba(44, 82, 130, 0.1),
-    0 1px 4px rgba(0, 0, 0, 0.06);
+    0 18px 46px rgba(15, 23, 42, 0.12),
+    0 1px 4px rgba(15, 23, 42, 0.06);
 }
 
 .card-header {
@@ -156,13 +159,13 @@ async function handleLogin() {
 }
 .card-header h2 {
   font-size: 20px;
-  font-weight: 700;
-  color: #1a2332;
+  font-weight: 900;
+  color: var(--hr-text);
   margin: 0 0 6px;
 }
 .card-header p {
   font-size: 13px;
-  color: #8a96a6;
+  color: var(--hr-muted);
   margin: 0;
 }
 
@@ -171,24 +174,25 @@ async function handleLogin() {
 }
 .field-label {
   font-size: 14px;
-  font-weight: 600;
-  color: #1a2332;
+  font-weight: 800;
+  color: var(--hr-text);
   margin-bottom: 8px;
   display: block;
 }
 .custom-field {
-  background: #f5f7fa;
+  background: #f8fafc;
   border-radius: 10px;
-  border: 1.5px solid transparent;
+  border: 1px solid var(--hr-border);
   padding: 0 14px;
   transition: border-color 0.2s ease, background 0.2s ease;
 }
 .custom-field:focus-within {
-  border-color: #2c5282;
+  border-color: var(--hr-accent);
   background: #fff;
+  box-shadow: 0 0 0 3px rgba(3,105,161,.10);
 }
 .custom-field :deep(.van-field__control) {
-  color: #1a2332;
+  color: var(--hr-text);
   font-size: 16px;
 }
 .custom-field :deep(.van-field__control::placeholder) {
@@ -205,16 +209,16 @@ async function handleLogin() {
 .login-btn {
   height: 48px;
   font-size: 16px;
-  font-weight: 600;
-  letter-spacing: 2px;
-  background: linear-gradient(135deg, #1a3a6b 0%, #2c5282 100%) !important;
+  font-weight: 800;
+  letter-spacing: 0;
+  background: linear-gradient(135deg, #0f172a 0%, #0369a1 100%) !important;
   border: none !important;
-  box-shadow: 0 4px 16px rgba(44, 82, 130, 0.35);
+  box-shadow: 0 10px 24px rgba(3, 105, 161, 0.24);
   transition: all 0.2s ease;
 }
 .login-btn:hover {
   transform: translateY(-1px);
-  box-shadow: 0 6px 20px rgba(44, 82, 130, 0.45);
+  box-shadow: 0 14px 28px rgba(3, 105, 161, 0.28);
 }
 
 /* 底部 */
@@ -224,7 +228,7 @@ async function handleLogin() {
 }
 .login-footer p {
   font-size: 11px;
-  color: #b0bec5;
+  color: var(--hr-muted);
   margin: 0;
 }
 </style>

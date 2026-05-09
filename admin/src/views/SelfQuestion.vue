@@ -2,65 +2,69 @@
   <div class="sq-page">
     <el-card v-loading="loading">
       <template #header>
-        <div style="display:flex;justify-content:space-between;align-items:center">
+        <div class="header">
           <span>自评题目导入</span>
           <el-space>
             <el-button @click="downloadTemplate">下载模板</el-button>
-            <el-upload action="" :before-upload="handleUpload" accept=".xlsx,.xls" :show-file-list="false">
-              <el-button type="primary">导入Excel</el-button>
+            <el-upload action="" :before-upload="handleUpload" accept=".csv" :show-file-list="false">
+              <el-button type="primary">导入 CSV</el-button>
             </el-upload>
             <el-button type="danger" @click="handleClear" :disabled="list.length === 0">清除全部</el-button>
           </el-space>
         </div>
       </template>
 
-      <el-alert type="info" :closable="false" style="margin-bottom:16px">
-        Excel格式：工号、题目1~10、分值1~10（已填写题目的分值合计必须=100）。支持1~10题灵活配置，未使用列留空；例如只填3道题且分值合计100，也可以导入。
+      <el-alert type="info" :closable="false" class="tip">
+        模板为单表双区：姓名、工号、业绩题1-10/业绩分值1-10、综合题1-5/综合分值1-5。后端会校验工号存在、姓名匹配、业绩合计 70 分、综合合计 30 分，分值最多 1 位小数。
       </el-alert>
 
       <el-table :data="list" stripe v-if="list.length > 0">
-        <el-table-column prop="employee_no" label="工号" width="100" />
-        <el-table-column prop="user_name" label="姓名" width="100" />
-        <el-table-column label="题目">
+        <el-table-column prop="employee_no" label="工号" width="120" />
+        <el-table-column prop="user_name" label="姓名" width="120" />
+        <el-table-column label="业绩评价">
           <template #default="{ row }">
-            <div v-for="q in row.questions.filter((q:any) => q.content)" :key="q.seq" style="margin-bottom:4px">
-              <span style="color:#666">Q{{ q.seq }}：</span>{{ q.content }}
-              <span style="color:#409eff;margin-left:8px">分值 {{ q.weight || 0 }} 分</span>
+            <div v-for="q in row.performance_questions" :key="q.answer_seq" class="q-line">
+              <span class="q-index">P{{ q.seq }}</span>{{ q.content }}
+              <span class="q-score">{{ q.weight }} 分</span>
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="80">
+        <el-table-column label="综合评价">
           <template #default="{ row }">
-            <el-button size="small" type="danger" @click="deleteOne(row)">删除</el-button>
+            <div v-for="q in row.comprehensive_questions" :key="q.answer_seq" class="q-line">
+              <span class="q-index">C{{ q.seq }}</span>{{ q.content }}
+              <span class="q-score">{{ q.weight }} 分</span>
+            </div>
           </template>
         </el-table-column>
       </el-table>
-      <el-empty v-else description="暂无自评题目，请导入Excel" />
+      <el-empty v-else description="暂无自评题目，请导入模板数据" />
 
-      <div style="margin-top:16px;text-align:center">
+      <div class="footer">
         <el-button @click="$router.back()">返回</el-button>
       </div>
     </el-card>
 
-    <!-- 导入预览弹窗 -->
-    <el-dialog v-model="previewVisible" title="导入预览" width="700px">
-      <el-alert v-if="importResult" :type="importResult.errors.length > 0 ? 'warning' : 'success'" style="margin-bottom:12px">
-        成功 {{ importResult.success }} 条
-        <span v-if="importResult.errors.length > 0">，失败 {{ importResult.errors.length }} 条</span>
+    <el-dialog v-model="previewVisible" title="导入结果" width="820px">
+      <el-alert v-if="importResult" :type="importResult.failed > 0 ? 'warning' : 'success'" :closable="false" class="tip">
+        共 {{ importResult.total }} 行，成功 {{ importResult.success }} 行，失败 {{ importResult.failed }} 行
       </el-alert>
-      <el-table :data="importResult?.errors || []" max-height="300" v-if="importResult?.errors.length">
-        <el-table-column prop="row" label="行号" width="80" />
-        <el-table-column prop="message" label="错误信息" />
+      <el-table v-if="importResult?.errors?.length" :data="importResult.errors" max-height="360" border>
+        <el-table-column prop="row" label="行号" width="90" />
+        <el-table-column prop="employee_no" label="工号" width="120" />
+        <el-table-column prop="user_name" label="姓名" width="120" />
+        <el-table-column prop="message" label="错误信息" min-width="260" />
       </el-table>
+      <el-empty v-else description="本次导入全部成功" />
       <template #footer>
-        <el-button type="primary" @click="previewVisible=false; loadList()">确定</el-button>
+        <el-button type="primary" @click="previewVisible = false; loadList()">确定</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { selfQuestionApi } from '../api'
 
@@ -73,72 +77,102 @@ const importResult = ref<any>(null)
 async function loadList() {
   loading.value = true
   try {
-    const res: any = await selfQuestionApi.list(parseInt(props.batchId))
+    const res: any = await selfQuestionApi.list(Number(props.batchId))
     list.value = res.data || []
   } finally {
     loading.value = false
   }
 }
 
+function csvEscape(value: string | number) {
+  const text = String(value ?? '')
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
+}
+
 function downloadTemplate() {
-  const headers = ['工号', '题目1', '分值1', '题目2', '分值2', '题目3', '分值3', '题目4', '分值4',
-    '题目5', '分值5', '题目6', '分值6', '题目7', '分值7', '题目8', '分值8', '题目9', '分值9',
-    '题目10', '分值10']
-  // 示例：3道题，分值分别为40/35/25，合计100
-  const row = ['EMP001', '工作目标完成情况', '40', '协作沟通与团队贡献', '35', '学习改进与创新意识', '25', '', '', '', '', '', '', '', '', '', '', '', '', '', '']
-  const csv = [headers.join(','), row.join(',')]
-  const blob = new Blob([csv.join('\n')], { type: 'text/csv' })
+  const headers = ['姓名', '工号']
+  for (let i = 1; i <= 10; i++) headers.push(`业绩题${i}`, `业绩分值${i}`)
+  for (let i = 1; i <= 5; i++) headers.push(`综合题${i}`, `综合分值${i}`)
+  const row = ['张三', 'EMP001']
+  row.push('工作目标完成质量', '35', '重点任务推进成效', '35')
+  for (let i = 3; i <= 10; i++) row.push('', '')
+  row.push('协作沟通', '10', '责任意识', '10', '学习改进', '10')
+  for (let i = 4; i <= 5; i++) row.push('', '')
+  const csv = [headers, row].map(line => line.map(csvEscape).join(',')).join('\n')
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = '自评题目分值导入模板.csv'
+  a.download = '自评题目导入模板.csv'
   a.click()
   URL.revokeObjectURL(url)
 }
 
+function parseCsvLine(line: string) {
+  const result: string[] = []
+  let current = ''
+  let inQuotes = false
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i]
+    if (char === '"' && line[i + 1] === '"') {
+      current += '"'
+      i++
+    } else if (char === '"') {
+      inQuotes = !inQuotes
+    } else if (char === ',' && !inQuotes) {
+      result.push(current.trim())
+      current = ''
+    } else {
+      current += char
+    }
+  }
+  result.push(current.trim())
+  return result
+}
+
 async function handleUpload(file: File) {
-  const formData = new FormData()
-  formData.append('file', file)
-  // 简单解析：实际项目应使用 xlsx 库，这里用纯前端读 CSV
-  ElMessage.info('正在解析文件，请稍候...')
-  // 提示：此处应接入 xlsx 库解析Excel，或在后端处理
-  // 为保证流程完整，示例为手动构造数据
   const reader = new FileReader()
   reader.onload = async (e) => {
     try {
-      const text = e.target?.result as string
-      const lines = text.trim().split('\n')
-      if (lines.length < 2) { ElMessage.error('文件内容为空'); return }
-      const headers = lines[0].split(',').map(h => h.trim())
-      const items: any[] = []
-      for (let i = 1; i < lines.length; i++) {
-        const vals = lines[i].split(',').map(v => v.trim())
-        const obj: any = {}
-        headers.forEach((h, idx) => { obj[h] = vals[idx] || '' })
-        items.push(obj)
+      const text = String(e.target?.result || '').trim()
+      const lines = text.split(/\r?\n/).filter(Boolean)
+      if (lines.length < 2) {
+        ElMessage.error('文件内容为空')
+        return
       }
-      const res: any = await selfQuestionApi.import(parseInt(props.batchId), items)
+      const headers = parseCsvLine(lines[0]).map((h, idx) => idx === 0 ? h.replace(/^\uFEFF/, '') : h)
+      const items = lines.slice(1).map((line, idx) => {
+        const vals = parseCsvLine(line)
+        const obj: any = { __row: idx + 2 }
+        headers.forEach((h, i) => { obj[h] = vals[i] || '' })
+        return obj
+      })
+      const res: any = await selfQuestionApi.import(Number(props.batchId), items)
       importResult.value = res.data
       previewVisible.value = true
-    } catch {
-      ElMessage.error('文件解析失败')
+    } catch (err: any) {
+      ElMessage.error(err?.message || '文件解析失败')
     }
   }
-  reader.readAsText(file)
+  reader.readAsText(file, 'utf-8')
   return false
 }
 
-async function deleteOne(_row: any) {
-  await ElMessageBox.confirm('确认删除？', '删除')
-  ElMessage.info('请重新导入以更新数据')
-}
-
 async function handleClear() {
-  await ElMessageBox.confirm('确认清除所有自评题目？', '清除')
-  await selfQuestionApi.delete(parseInt(props.batchId))
-  loadList()
+  await ElMessageBox.confirm('确认清除当前批次的所有自评题目？', '清除')
+  await selfQuestionApi.delete(Number(props.batchId))
+  await loadList()
   ElMessage.success('已清除')
 }
 
 onMounted(loadList)
 </script>
+
+<style scoped>
+.header { display: flex; justify-content: space-between; align-items: center; }
+.tip { margin-bottom: 16px; }
+.q-line { margin-bottom: 4px; line-height: 1.5; }
+.q-index { color: #64748b; margin-right: 6px; }
+.q-score { color: #409eff; margin-left: 8px; }
+.footer { margin-top: 16px; text-align: center; }
+</style>

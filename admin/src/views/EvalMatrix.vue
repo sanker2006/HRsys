@@ -1,194 +1,191 @@
 <template>
   <div class="matrix-page">
-    <el-alert type="info" :closable="false" style="margin-bottom:16px">
-      评估矩阵决定不同角色之间的评价关系规则。自评全员强制启用；同层互评和向下评估可按需开启。
+    <el-alert type="info" :closable="false" class="matrix-alert">
+      评价矩阵决定本批次自动生成哪些评价关系。领导不生成自评；普通员工同级互评固定为本部门内部互评。
     </el-alert>
-    <el-card v-loading="loading">
 
-      <!-- Section 1: 自评 -->
-      <div class="section-block">
+    <el-card v-loading="loading">
+      <section class="section-block">
         <div class="section-header">
-          <el-icon><Lock /></el-icon>
-          <span class="section-title">自评</span>
-          <el-tag type="info" size="small">全员，不可关闭</el-tag>
+          <span class="section-mark">自</span>
+          <span class="section-title">自我评价</span>
+          <el-tag type="info" size="small">部门负责人、员工</el-tag>
         </div>
-        <p class="section-desc">所有角色评价本人，强制启用，无需配置。</p>
+        <p class="section-desc">主要领导和分管领导不参与自评。部门负责人和员工自评关系默认启用。</p>
         <el-table :data="selfRows" border size="small">
-          <el-table-column prop="fromRole" label="评价者角色" width="150">
+          <el-table-column prop="from_role" label="评价人角色" width="180">
             <template #default="{ row }">
-              <span class="role-tag" :class="row.fromRole">{{ roleText[row.fromRole] }}</span>
+              <span class="role-tag" :class="row.from_role">{{ roleText[row.from_role] }}</span>
             </template>
           </el-table-column>
           <el-table-column label="评价对象" align="center">
-            <template #default>
-              <span class="eval-target">本人</span>
-            </template>
+            <template #default>本人</template>
           </el-table-column>
-          <el-table-column label="评估类型" align="center">
-            <template #default>
-              <el-tag type="primary" size="small">自评</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="状态" align="center">
+          <el-table-column label="状态" align="center" width="120">
             <template #default>
               <el-tag type="success" size="small">已启用</el-tag>
             </template>
           </el-table-column>
         </el-table>
-      </div>
+      </section>
 
-      <!-- Section 2: 同层互评 -->
-      <div class="section-block">
+      <section class="section-block">
         <div class="section-header">
-          <el-icon><User /></el-icon>
-          <span class="section-title">同层互评</span>
-          <el-tag type="warning" size="small">可配置</el-tag>
+          <span class="section-mark">互</span>
+          <span class="section-title">同级互评</span>
+          <el-tag type="warning" size="small">只评综合评价</el-tag>
         </div>
-        <p class="section-desc">同级别同事之间互相评价，支持本部门或跨部门两种范围。</p>
+        <p class="section-desc">部门负责人可配置本部门或跨部门互评；普通员工固定为本部门内其他员工互评。</p>
 
-        <!-- 部门负责人互评 -->
         <div class="eval-group">
           <div class="group-label">
             <span class="role-tag manager">部门负责人</span>
-            <el-checkbox
-              v-model="peerManager"
-              :true-value="1"
-              :false-value="0"
-              label="启用部门负责人互评"
-            />
+            <el-checkbox v-model="peerManagerEnabled" :true-value="1" :false-value="0">
+              启用部门负责人互评
+            </el-checkbox>
           </div>
-          <div v-if="peerManager === 1" class="group-options">
+          <div v-if="peerManagerEnabled === 1" class="group-options">
             <el-radio-group v-model="peerCrossDept" size="small">
-              <el-radio :value="0">本部门互评（仅同部门负责人互相评价）</el-radio>
-              <el-radio :value="1">全公司互评（所有部门负责人互相评价）</el-radio>
+              <el-radio :value="0">仅本部门互评</el-radio>
+              <el-radio :value="1">全部部门负责人互评</el-radio>
             </el-radio-group>
           </div>
         </div>
 
-        <!-- 员工互评 -->
         <div class="eval-group">
           <div class="group-label">
-            <span class="role-tag staff">员工层</span>
-            <el-checkbox
-              v-model="peerStaff"
-              :true-value="1"
-              :false-value="0"
-              label="启用员工互评"
-              disabled
-            />
+            <span class="role-tag staff">员工</span>
+            <el-checkbox v-model="peerStaffEnabled" :true-value="1" :false-value="0">
+              启用员工互评
+            </el-checkbox>
           </div>
-          <div v-if="peerStaff === 1" class="group-options">
-            <el-tag type="info" size="small">仅本部门同事互评（不可关闭）</el-tag>
+          <div class="group-options">
+            <el-tag type="info" size="small">员工互评只在本部门内生成，不受跨部门开关影响</el-tag>
           </div>
         </div>
-      </div>
+      </section>
 
-      <!-- Section 3: 向下评估 -->
-      <div class="section-block">
+      <section class="section-block">
         <div class="section-header">
-          <el-icon><Bottom /></el-icon>
-          <span class="section-title">向下评估</span>
-          <el-tag type="warning" size="small">可配置</el-tag>
+          <span class="section-mark">下</span>
+          <span class="section-title">向下评价</span>
+          <el-tag type="warning" size="small">按角色生成</el-tag>
         </div>
-        <p class="section-desc">上级评价下级，评估结果不对外公示。</p>
+        <p class="section-desc">分管领导只评价所负责部门；主要领导评价全部部门负责人和员工。</p>
         <el-table :data="downwardRows" border size="small">
-          <el-table-column label="评价者" width="150">
+          <el-table-column label="评价人角色" width="180">
             <template #default="{ row }">
               <span class="role-tag" :class="row.from_role">{{ roleText[row.from_role] }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="被评人" width="150">
+          <el-table-column label="被评价角色" width="180">
             <template #default="{ row }">
               <span class="role-tag" :class="row.to_role">{{ roleText[row.to_role] }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="评估类型" align="center">
-            <template #default>
-              <el-tag type="warning" size="small">向下评估</el-tag>
-            </template>
+          <el-table-column label="规则说明">
+            <template #default="{ row }">{{ ruleText(row) }}</template>
           </el-table-column>
-          <el-table-column label="启用" align="center">
+          <el-table-column label="启用" width="100" align="center">
             <template #default="{ row }">
-              <el-checkbox
-                v-model="row.enabled"
-                :true-value="1"
-                :false-value="0"
-              />
+              <el-switch v-model="row.enabled" :active-value="1" :inactive-value="0" />
             </template>
           </el-table-column>
         </el-table>
-      </div>
+      </section>
 
-      <div style="margin-top:20px;text-align:center">
+      <div class="actions">
         <el-button @click="$router.back()">返回</el-button>
         <el-button type="warning" @click="handleReset">重置为默认</el-button>
-        <el-button type="primary" @click="handleSave" :loading="saving">保存配置</el-button>
+        <el-button type="primary" :loading="saving" @click="handleSave">保存配置</el-button>
       </div>
     </el-card>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Lock, User, Bottom } from '@element-plus/icons-vue'
 import { evalMatrixApi } from '../api'
+
+type MatrixRow = {
+  from_role: string
+  to_role: string
+  eval_type: 'self' | 'peer' | 'downward'
+  enabled: number
+}
 
 const props = defineProps<{ batchId: string }>()
 const loading = ref(false)
 const saving = ref(false)
+const peerCrossDept = ref(0)
+const rawMatrix = ref<MatrixRow[]>([])
 
 const roleText: Record<string, string> = {
-  leader: '领导层',
+  main_leader: '主要领导',
+  division_leader: '分管领导',
   manager: '部门负责人',
-  staff: '员工层',
+  staff: '员工',
 }
 
-// 原始矩阵数据（扁平结构，来自API）
-const rawMatrix = ref<any[]>([])
-const peerCrossDept = ref(0)
+const defaultRows: MatrixRow[] = [
+  { from_role: 'main_leader', to_role: 'manager', eval_type: 'downward', enabled: 1 },
+  { from_role: 'main_leader', to_role: 'staff', eval_type: 'downward', enabled: 1 },
+  { from_role: 'division_leader', to_role: 'manager', eval_type: 'downward', enabled: 1 },
+  { from_role: 'division_leader', to_role: 'staff', eval_type: 'downward', enabled: 1 },
+  { from_role: 'manager', to_role: 'manager', eval_type: 'peer', enabled: 1 },
+  { from_role: 'manager', to_role: 'staff', eval_type: 'downward', enabled: 1 },
+  { from_role: 'manager', to_role: 'self', eval_type: 'self', enabled: 1 },
+  { from_role: 'staff', to_role: 'staff', eval_type: 'peer', enabled: 1 },
+  { from_role: 'staff', to_role: 'self', eval_type: 'self', enabled: 1 },
+]
 
-// 派生：自评行（只读展示）
-const selfRows = computed(() =>
-  rawMatrix.value
-    .filter(r => r.eval_type === 'self' && r.to_role === 'self')
-    .map(r => ({ fromRole: r.from_role }))
-)
+const selfRows = computed(() => rawMatrix.value.filter(r => r.eval_type === 'self'))
+const downwardRows = computed(() => rawMatrix.value.filter(r => r.eval_type === 'downward'))
 
-// 派生：同层互评开关
-const peerManager = computed({
-  get: () => {
-    const row = rawMatrix.value.find(r => r.from_role === 'manager' && r.to_role === 'manager' && r.eval_type === 'peer')
-    return row?.enabled ?? 0
-  },
-  set: (val) => {
-    const row = rawMatrix.value.find(r => r.from_role === 'manager' && r.to_role === 'manager' && r.eval_type === 'peer')
-    if (row) row.enabled = val
-  },
+const peerManagerEnabled = computed({
+  get: () => findRow('manager', 'manager', 'peer')?.enabled ?? 1,
+  set: value => setEnabled('manager', 'manager', 'peer', value),
 })
 
-const peerStaff = computed({
-  get: () => {
-    const row = rawMatrix.value.find(r => r.from_role === 'staff' && r.to_role === 'staff' && r.eval_type === 'peer')
-    return row?.enabled ?? 1
-  },
-  set: (val) => {
-    const row = rawMatrix.value.find(r => r.from_role === 'staff' && r.to_role === 'staff' && r.eval_type === 'peer')
-    if (row) row.enabled = val
-  },
+const peerStaffEnabled = computed({
+  get: () => findRow('staff', 'staff', 'peer')?.enabled ?? 1,
+  set: value => setEnabled('staff', 'staff', 'peer', value),
 })
 
-// 派生：向下评估行（直接操作 rawMatrix，保持双向绑定）
-const downwardRows = computed(() =>
-  rawMatrix.value.filter(r => r.eval_type === 'downward')
-)
+function rowKey(row: MatrixRow) {
+  return `${row.from_role}:${row.to_role}:${row.eval_type}`
+}
+
+function findRow(fromRole: string, toRole: string, evalType: string) {
+  return rawMatrix.value.find(r => r.from_role === fromRole && r.to_role === toRole && r.eval_type === evalType)
+}
+
+function setEnabled(fromRole: string, toRole: string, evalType: string, enabled: number) {
+  const row = findRow(fromRole, toRole, evalType)
+  if (row) row.enabled = enabled
+}
+
+function normalizeRows(rows: MatrixRow[]) {
+  const incoming = new Map(rows.map(row => [rowKey(row), row.enabled]))
+  rawMatrix.value = defaultRows.map(row => ({
+    ...row,
+    enabled: incoming.get(rowKey(row)) ?? row.enabled,
+  }))
+}
+
+function ruleText(row: MatrixRow) {
+  if (row.from_role === 'main_leader') return '主要领导评价所有部门负责人和员工'
+  if (row.from_role === 'division_leader') return '分管领导只评价负责部门范围内人员'
+  if (row.from_role === 'manager' && row.to_role === 'staff') return '部门负责人评价本部门员工'
+  return '-'
+}
 
 async function load() {
   loading.value = true
   try {
-    const res: any = await evalMatrixApi.get(parseInt(props.batchId))
-    // GET 返回 { matrix, peer_cross_dept }
-    rawMatrix.value = res.data?.matrix || res.data || []
+    const res: any = await evalMatrixApi.get(Number(props.batchId))
+    normalizeRows(res.data?.matrix || [])
     peerCrossDept.value = res.data?.peer_cross_dept ?? 0
   } finally {
     loading.value = false
@@ -198,13 +195,7 @@ async function load() {
 async function handleSave() {
   saving.value = true
   try {
-    const rows = rawMatrix.value.map(r => ({
-      from_role: r.from_role,
-      to_role: r.to_role,
-      eval_type: r.eval_type,
-      enabled: r.enabled,
-    }))
-    await evalMatrixApi.save(parseInt(props.batchId), rows, peerCrossDept.value)
+    await evalMatrixApi.save(Number(props.batchId), rawMatrix.value, peerCrossDept.value)
     ElMessage.success('保存成功')
   } finally {
     saving.value = false
@@ -212,9 +203,9 @@ async function handleSave() {
 }
 
 async function handleReset() {
-  await ElMessageBox.confirm('确认重置为默认矩阵？', '重置')
-  await evalMatrixApi.reset(parseInt(props.batchId))
-  load()
+  await ElMessageBox.confirm('确认重置为默认评价矩阵？已保存的矩阵配置会被覆盖。', '重置矩阵')
+  await evalMatrixApi.reset(Number(props.batchId))
+  await load()
   ElMessage.success('已重置为默认矩阵')
 }
 
@@ -222,67 +213,90 @@ onMounted(load)
 </script>
 
 <style scoped>
+.matrix-alert {
+  margin-bottom: 16px;
+}
 .section-block {
-  margin-bottom: 28px;
-  padding-bottom: 20px;
-  border-bottom: 1px dashed #e8e8e8;
+  padding-bottom: 22px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid #edf0f5;
 }
 .section-block:last-of-type {
   border-bottom: none;
   margin-bottom: 0;
 }
-
 .section-header {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
+  color: #1f2d3d;
   font-size: 15px;
-  font-weight: 600;
-  color: #303133;
+  font-weight: 700;
 }
-
+.section-mark {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #edf4ff;
+  color: #2f6fbd;
+  font-size: 13px;
+}
 .section-title {
   font-size: 15px;
-  font-weight: 600;
 }
-
 .section-desc {
-  margin: 0 0 12px 24px;
+  margin: 0 0 14px 34px;
+  color: #667085;
   font-size: 13px;
-  color: #909399;
 }
-
 .eval-group {
-  margin: 12px 0 12px 24px;
-  padding: 10px 14px;
-  background: #f5f7fa;
-  border-radius: 6px;
+  margin: 12px 0 12px 34px;
+  padding: 12px 14px;
+  border: 1px solid #edf0f5;
+  border-radius: 8px;
+  background: #fafbfc;
 }
-
 .group-label {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
-
 .group-options {
-  margin-top: 8px;
-  margin-left: 26px;
+  margin-top: 10px;
+  margin-left: 92px;
 }
-
 .role-tag {
   display: inline-block;
-  padding: 2px 10px;
+  min-width: 72px;
+  padding: 3px 10px;
   border-radius: 4px;
   font-size: 12px;
+  text-align: center;
 }
-.role-tag.leader { background: #ecf5ff; color: #409eff; }
-.role-tag.manager { background: #f0f9eb; color: #67c23a; }
-.role-tag.staff { background: #fdf6ec; color: #e6a23c; }
-
-.eval-target {
-  color: #409eff;
-  font-weight: 500;
+.role-tag.main_leader {
+  background: #fef0f0;
+  color: #c45656;
+}
+.role-tag.division_leader {
+  background: #fdf6ec;
+  color: #b88230;
+}
+.role-tag.manager {
+  background: #f0f9eb;
+  color: #529b2e;
+}
+.role-tag.staff {
+  background: #ecf5ff;
+  color: #337ecc;
+}
+.actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 20px;
 }
 </style>

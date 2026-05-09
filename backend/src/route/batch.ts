@@ -49,6 +49,9 @@ router.post('/:id/start', admin, async (ctx: Context) => {
   const id = parseInt(ctx.params.id);
   const batch = BatchModel.findById(id);
   if (!batch) return fail(ctx, '批次不存在', -1, 404);
+  if (batch.status === 'closed') return fail(ctx, '批次已结束，不能启动');
+  if (BatchModel.isExpired(batch)) return fail(ctx, '批次已过结束时间，不能启动');
+  if (!BatchModel.hasStarted(batch)) return fail(ctx, '批次尚未到开始时间，不能启动');
   if (batch.status !== 'draft') return fail(ctx, '只有草稿状态的批次可以启动');
   BatchModel.update(id, { status: 'active' });
   success(ctx, BatchModel.findById(id), '已启动');

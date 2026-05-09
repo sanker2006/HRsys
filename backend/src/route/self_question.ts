@@ -11,18 +11,37 @@ const router = new Router({ prefix: '/api/v1/self-question' });
 
 router.use(auth);
 
+function pickString(item: any, keys: string[]): string {
+  for (const key of keys) {
+    const value = item[key];
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      return String(value).trim();
+    }
+  }
+  return '';
+}
+
+function pickValue(item: any, keys: string[]): any {
+  for (const key of keys) {
+    const value = item[key];
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      return value;
+    }
+  }
+  return undefined;
+}
+
 router.get('/:batchId', async (ctx: Context) => {
   const batchId = parseInt(ctx.params.batchId);
   const rows = SelfQuestionModel.findByBatchId(batchId);
-  const exports = SelfQuestionModel.toExportFormat(rows);
-  success(ctx, exports);
+  success(ctx, SelfQuestionModel.toExportFormat(rows));
 });
 
 router.get('/:batchId/me', async (ctx: Context) => {
   const batchId = parseInt(ctx.params.batchId);
   const userId = (ctx.state as any).userId;
   const row = SelfQuestionModel.findByBatchAndUser(batchId, userId);
-  if (!row) return fail(ctx, '该批次没有您的自评题目', -1, 404);
+  if (!row) return fail(ctx, '该批次没有配置您的自评题目', -1, 404);
   success(ctx, SelfQuestionModel.toExportFormat([row])[0]);
 });
 
@@ -33,33 +52,97 @@ router.post('/import', admin, async (ctx: Context) => {
   if (!batch) return fail(ctx, '批次不存在', -1, 404);
   if (!Array.isArray(items)) return fail(ctx, 'items 必须是数组');
 
-  const importErrors: Array<{ row: number; message: string }> = [];
-  const valid: Array<{ user_id: number; data: any }> = [];
+  const importErrors: Array<{ row: number; employee_no?: string; user_name?: string; message: string }> = [];
+  const valid: Array<{ row: number; user_id: number; employee_no: string; user_name: string; data: any }> = [];
 
   items.forEach((item: any, idx: number) => {
-    const employeeNo = String(item['工号'] || item.employee_no || '');
-    const user = UserModel.findByEmployeeNo(employeeNo);
-    if (!user) {
-      importErrors.push({ row: idx + 2, message: `工号 ${employeeNo} 不存在` });
+    const row = Number(item.__row ?? item.row ?? idx + 2);
+    const employeeNo = pickString(item, ['工号', '员工号', 'employee_no', 'employeeNo']);
+    const userName = pickString(item, ['姓名', 'name', 'user_name', 'userName']);
+
+    if (!employeeNo) {
+      importErrors.push({ row, message: '工号不能为空' });
       return;
     }
+    if (!userName) {
+      importErrors.push({ row, employee_no: employeeNo, message: '姓名不能为空' });
+      return;
+    }
+
+    const user = UserModel.findByEmployeeNo(employeeNo);
+    if (!user) {
+      importErrors.push({ row, employee_no: employeeNo, user_name: userName, message: `工号 ${employeeNo} 不存在` });
+      return;
+    }
+    if (String(user.name).trim() !== userName) {
+      importErrors.push({
+        row,
+        employee_no: employeeNo,
+        user_name: userName,
+        message: `工号 ${employeeNo} 与姓名 ${userName} 不匹配，系统记录为 ${user.name}`,
+      });
+      return;
+    }
+
     const data: any = {};
     for (let i = 1; i <= 10; i++) {
-      const content = item[`题目${i}`] || item[`content_${i}`];
-      const score = item[`分值${i}`] ?? item[`score_${i}`] ?? item[`权重${i}`] ?? item[`weight_${i}`];
+      const content = pickString(item, [
+        `业绩题${i}`,
+        `业绩评价题${i}`,
+        `业绩题目${i}`,
+        `performance_content_${i}`,
+        `performance_question_${i}`,
+        `题目${i}`,
+        `content_${i}`,
+      ]);
+      const score = pickValue(item, [
+        `业绩分值${i}`,
+        `业绩权重${i}`,
+        `performance_score_${i}`,
+        `performance_weight_${i}`,
+        `分值${i}`,
+        `权重${i}`,
+        `score_${i}`,
+        `weight_${i}`,
+      ]);
       if (content) {
-        data[`content_${i}`] = String(content);
-        data[`weight_${i}`] = score !== undefined && score !== null && score !== '' ? parseFloat(String(score)) : null;
+        data[`content_${i}`] = content;
+        data[`weight_${i}`] = score !== undefined ? Number(score) : null;
       }
     }
-    valid.push({ user_id: user.id, data });
+
+    for (let i = 1; i <= 5; i++) {
+      const content = pickString(item, [
+        `综合题${i}`,
+        `综合评价题${i}`,
+        `综合题目${i}`,
+        `comprehensive_content_${i}`,
+        `comprehensive_question_${i}`,
+      ]);
+      const score = pickValue(item, [
+        `综合分值${i}`,
+        `综合权重${i}`,
+        `comprehensive_score_${i}`,
+        `comprehensive_weight_${i}`,
+      ]);
+      if (content) {
+        data[`comp_content_${i}`] = content;
+        data[`comp_weight_${i}`] = score !== undefined ? Number(score) : null;
+      }
+    }
+
+    valid.push({ row, user_id: user.id, employee_no: employeeNo, user_name: user.name, data });
   });
 
   const result = SelfQuestionModel.batchUpsert(batch_id, valid);
+  const errors = [...importErrors, ...result.errors].sort((a, b) => a.row - b.row);
+
   success(ctx, {
+    total: items.length,
     success: result.success,
-    errors: [...importErrors, ...result.errors],
-  }, `导入完成，成功 ${result.success} 条`);
+    failed: errors.length,
+    errors,
+  }, `导入完成，成功 ${result.success} 条，失败 ${errors.length} 条`);
 });
 
 router.delete('/:batchId', admin, async (ctx: Context) => {

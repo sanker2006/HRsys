@@ -13,12 +13,66 @@ export interface BatchRow {
   updated_at: string;
 }
 
+function parseDateTime(value: string): Date | null {
+  if (!value) return null;
+  const normalized = value.trim().replace(' ', 'T');
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function isExpired(batch: Pick<BatchRow, 'end_time' | 'status'>, now = new Date()): boolean {
+  if (batch.status === 'closed') return true;
+  const end = parseDateTime(batch.end_time);
+  return !!end && now.getTime() >= end.getTime();
+}
+
+function hasStarted(batch: Pick<BatchRow, 'start_time'>, now = new Date()): boolean {
+  const start = parseDateTime(batch.start_time);
+  return !start || now.getTime() >= start.getTime();
+}
+
+function closeExpiredBatch(batch: BatchRow | undefined): BatchRow | undefined {
+  if (!batch) return batch;
+  if (batch.status !== 'closed' && isExpired(batch)) {
+    getDb().run("UPDATE batch SET status = 'closed', updated_at = datetime('now') WHERE id = ?", [batch.id]);
+    saveDb();
+    return { ...batch, status: 'closed' };
+  }
+  return batch;
+}
+
+function closeAllExpired(): void {
+  const rows = queryAll<BatchRow>("SELECT * FROM batch WHERE status != 'closed'");
+  const expiredIds = rows.filter(row => isExpired(row)).map(row => row.id);
+  if (expiredIds.length === 0) return;
+  const placeholders = expiredIds.map(() => '?').join(',');
+  getDb().run(
+    `UPDATE batch SET status = 'closed', updated_at = datetime('now') WHERE id IN (${placeholders})`,
+    expiredIds
+  );
+  saveDb();
+}
+
 export const BatchModel = {
+  isExpired,
+  hasStarted,
+
+  assertAcceptingSubmissions(batchId: number): { ok: boolean; message?: string; batch?: BatchRow } {
+    const batch = this.findById(batchId);
+    if (!batch) return { ok: false, message: '批次不存在' };
+    if (batch.status === 'closed') return { ok: false, message: '批次已结束，不能提交评价' };
+    if (batch.status !== 'active') return { ok: false, message: '批次未启动，不能提交评价' };
+    if (!hasStarted(batch)) return { ok: false, message: '批次尚未到开始时间，不能提交评价' };
+    if (isExpired(batch)) return { ok: false, message: '批次已过结束时间，不能提交评价' };
+    return { ok: true, batch };
+  },
+
   findById(id: number): BatchRow | undefined {
-    return queryOne<BatchRow>('SELECT * FROM batch WHERE id = ?', [id]);
+    return closeExpiredBatch(queryOne<BatchRow>('SELECT * FROM batch WHERE id = ?', [id]));
   },
 
   findAll(filters?: { status?: string; keyword?: string }): BatchRow[] {
+    closeAllExpired();
     let sql = 'SELECT * FROM batch WHERE 1=1';
     const params: any[] = [];
     if (filters?.status) { sql += ' AND status = ?'; params.push(filters.status); }
@@ -28,6 +82,7 @@ export const BatchModel = {
   },
 
   count(filters?: { status?: string }): number {
+    closeAllExpired();
     let sql = 'SELECT COUNT(*) as total FROM batch WHERE 1=1';
     const params: any[] = [];
     if (filters?.status) { sql += ' AND status = ?'; params.push(filters.status); }
@@ -47,7 +102,7 @@ export const BatchModel = {
     saveDb();
     const batch = queryOne<BatchRow>('SELECT * FROM batch ORDER BY id DESC LIMIT 1');
     if (!batch) throw new Error('创建批次失败');
-    return batch;
+    return closeExpiredBatch(batch)!;
   },
 
   update(id: number, data: Partial<{
@@ -67,6 +122,7 @@ export const BatchModel = {
     params.push(id);
     getDb().run(`UPDATE batch SET ${fields.join(', ')} WHERE id = ?`, params);
     saveDb();
+    closeExpiredBatch(queryOne<BatchRow>('SELECT * FROM batch WHERE id = ?', [id]));
   },
 
   delete(id: number): void {
@@ -74,7 +130,6 @@ export const BatchModel = {
     saveDb();
   },
 
-  // 获取批次的参与人数
   getParticipantCount(batchId: number): number {
     const row = queryOne<{ total: number }>(
       `SELECT COUNT(DISTINCT evaluator_id) as total FROM relation WHERE batch_id = ?`,
@@ -83,7 +138,6 @@ export const BatchModel = {
     return row?.total ?? 0;
   },
 
-  // 获取批次的已完成评价数
   getCompletedCount(batchId: number): number {
     const row = queryOne<{ total: number }>(
       `SELECT COUNT(*) as total FROM relation WHERE batch_id = ? AND status = 'completed'`,

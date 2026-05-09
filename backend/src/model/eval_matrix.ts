@@ -1,27 +1,28 @@
 import { getDb, saveDb } from '../db/index.js';
 import { queryAll, queryOne } from '../db/query.js';
 
+export type MatrixRole = 'main_leader' | 'division_leader' | 'manager' | 'staff';
+
 export interface EvalMatrixRow {
   id: number;
   batch_id: number;
-  from_role: 'leader' | 'manager' | 'staff';
-  to_role: 'leader' | 'manager' | 'staff' | 'self';
+  from_role: MatrixRole;
+  to_role: MatrixRole | 'self';
   eval_type: 'self' | 'peer' | 'downward';
   enabled: number;
   created_at: string;
 }
 
-
-// 默认评估矩阵（V1.3定稿�?
 const DEFAULT_MATRIX: Omit<EvalMatrixRow, 'id' | 'batch_id' | 'created_at'>[] = [
-  { from_role: 'leader',   to_role: 'manager', eval_type: 'downward', enabled: 1 },
-  { from_role: 'leader',   to_role: 'staff',    eval_type: 'downward', enabled: 1 },
-  { from_role: 'leader',   to_role: 'self',     eval_type: 'self',     enabled: 1 },
-  { from_role: 'manager',  to_role: 'manager',  eval_type: 'peer',     enabled: 1 },
-  { from_role: 'manager',  to_role: 'staff',    eval_type: 'downward', enabled: 1 },
-  { from_role: 'manager',  to_role: 'self',     eval_type: 'self',     enabled: 1 },
-  { from_role: 'staff',    to_role: 'staff',    eval_type: 'peer',     enabled: 1 },
-  { from_role: 'staff',    to_role: 'self',     eval_type: 'self',     enabled: 1 },
+  { from_role: 'main_leader',     to_role: 'manager', eval_type: 'downward', enabled: 1 },
+  { from_role: 'main_leader',     to_role: 'staff',   eval_type: 'downward', enabled: 1 },
+  { from_role: 'division_leader', to_role: 'manager', eval_type: 'downward', enabled: 1 },
+  { from_role: 'division_leader', to_role: 'staff',   eval_type: 'downward', enabled: 1 },
+  { from_role: 'manager',         to_role: 'manager', eval_type: 'peer',     enabled: 1 },
+  { from_role: 'manager',         to_role: 'staff',   eval_type: 'downward', enabled: 1 },
+  { from_role: 'manager',         to_role: 'self',    eval_type: 'self',     enabled: 1 },
+  { from_role: 'staff',           to_role: 'staff',   eval_type: 'peer',     enabled: 1 },
+  { from_role: 'staff',           to_role: 'self',    eval_type: 'self',     enabled: 1 },
 ];
 
 export const EvalMatrixModel = {
@@ -44,7 +45,6 @@ export const EvalMatrixModel = {
     saveDb();
   },
 
-  // 初始化默认矩阵（用于新批次）
   initDefaultMatrix(batchId: number): void {
     const db = getDb();
     for (const row of DEFAULT_MATRIX) {
@@ -56,7 +56,6 @@ export const EvalMatrixModel = {
     saveDb();
   },
 
-  // 批量保存矩阵（先删后插）
   saveMatrix(batchId: number, rows: Array<{
     from_role: string; to_role: string; eval_type: string; enabled: number;
   }>): void {
@@ -71,7 +70,6 @@ export const EvalMatrixModel = {
     saveDb();
   },
 
-  // 获取批次中启用的矩阵�?
   findEnabledByBatchId(batchId: number): EvalMatrixRow[] {
     return queryAll<EvalMatrixRow>(
       'SELECT * FROM eval_matrix WHERE batch_id = ? AND enabled = 1',
