@@ -1,52 +1,104 @@
 <template>
   <div class="admin-page batch-page">
-    <section class="admin-hero">
+    <section class="admin-hero batch-hero">
       <div>
         <h1>批次工作流</h1>
-        <p>每个批次都按“矩阵配置、题目模板、评价关系、进度监控”的顺序闭环。</p>
+        <p>按“评价矩阵、题目模板、评价关系、进度监控”的顺序完成每个评比活动。</p>
       </div>
       <div class="hero-actions">
-        <el-button type="primary" @click="openCreate">新建批次</el-button>
+        <el-button type="primary" size="large" @click="openCreate">新建批次</el-button>
       </div>
     </section>
 
-    <el-card class="work-card">
+    <section class="batch-metrics">
+      <div class="metric-card">
+        <div class="metric-label">全部批次</div>
+        <div class="metric-value">{{ batches.length }}</div>
+        <div class="metric-note">系统内评比活动</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">进行中</div>
+        <div class="metric-value success">{{ statusCount.active }}</div>
+        <div class="metric-note">允许提交评价</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">待配置</div>
+        <div class="metric-value warning">{{ statusCount.draft }}</div>
+        <div class="metric-note">尚未启动</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">已结束</div>
+        <div class="metric-value muted">{{ statusCount.closed }}</div>
+        <div class="metric-note">只读归档</div>
+      </div>
+    </section>
+
+    <el-card class="work-card batch-work-card">
       <template #header>
         <div class="card-titlebar">
           <div class="card-title">
             <strong>评比活动</strong>
-            <span>选择一个批次后继续配置或查看当前进度。</span>
+            <span>选择批次后继续配置，或直接查看当前完成进度。</span>
           </div>
         </div>
       </template>
 
       <div v-loading="loading" class="batch-list">
         <article v-for="row in paginatedList" :key="row.id" class="batch-card">
-          <div class="batch-main">
-            <div class="batch-top">
-              <div>
+          <div class="batch-status-rail" :class="row.status" aria-hidden="true" />
+
+          <div class="batch-content">
+            <div class="batch-header">
+              <div class="batch-title-block">
+                <div class="batch-eyebrow">{{ row.period || '未设置周期' }}</div>
                 <h2>{{ row.name }}</h2>
-                <p>{{ row.period || '未设置周期' }} · {{ row.start_time }} 至 {{ row.end_time }}</p>
+                <div class="batch-time">
+                  <span>{{ formatDate(row.start_time) }}</span>
+                  <em>至</em>
+                  <span>{{ formatDate(row.end_time) }}</span>
+                </div>
               </div>
-              <span class="status-chip" :class="statusClass(row.status)">{{ statusText[row.status] || row.status }}</span>
+
+              <div class="batch-scoreboard">
+                <span class="status-chip" :class="statusClass(row.status)">{{ statusText[row.status] || row.status }}</span>
+                <div class="score-number">
+                  <strong>{{ row.completed || 0 }}</strong>
+                  <span>/{{ row.total || 0 }}</span>
+                </div>
+                <small>完成 {{ progress(row) }}%</small>
+              </div>
             </div>
 
-            <div class="batch-progress">
-              <div class="progress-label">
-                <span>完成进度</span>
-                <b>{{ row.completed || 0 }}/{{ row.total || 0 }}</b>
+            <div class="progress-block" aria-label="完成进度">
+              <div class="progress-track">
+                <div class="progress-fill" :style="{ width: `${progress(row)}%` }" />
               </div>
-              <el-progress :percentage="row.total ? Math.round((row.completed / row.total) * 100) : 0" :stroke-width="10" />
+            </div>
+
+            <div class="workflow-strip">
+              <button type="button" class="workflow-step" @click="$router.push(`/matrix/${row.id}`)">
+                <span>01</span>
+                <strong>评价矩阵</strong>
+              </button>
+              <button type="button" class="workflow-step" @click="$router.push(`/self-question/${row.id}`)">
+                <span>02</span>
+                <strong>题目模板</strong>
+              </button>
+              <button type="button" class="workflow-step" @click="$router.push(`/relation/${row.id}`)">
+                <span>03</span>
+                <strong>评价关系</strong>
+              </button>
+              <button type="button" class="workflow-step primary-step" @click="$router.push(`/progress/${row.id}`)">
+                <span>04</span>
+                <strong>进度监控</strong>
+              </button>
             </div>
           </div>
 
-          <div class="workflow-actions">
-            <el-button @click="$router.push(`/matrix/${row.id}`)">评估矩阵</el-button>
-            <el-button @click="$router.push(`/self-question/${row.id}`)">题目模板</el-button>
-            <el-button @click="$router.push(`/relation/${row.id}`)">评价关系</el-button>
-            <el-button type="primary" plain @click="$router.push(`/progress/${row.id}`)">进度监控</el-button>
+          <div class="batch-actions">
+            <el-button type="primary" @click="$router.push(`/progress/${row.id}`)">查看进度</el-button>
             <el-dropdown @command="(cmd:string) => handleCommand(cmd, row)">
-              <el-button>
+              <el-button plain>
                 更多操作
                 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
               </el-button>
@@ -80,10 +132,10 @@
     <el-dialog v-model="showDialog" :title="editingId ? '编辑批次' : '新建批次'" width="520px">
       <el-form :model="form" label-width="96px">
         <el-form-item label="批次名称" required>
-          <el-input v-model="form.name" placeholder="如：2026年Q2评比活动" />
+          <el-input v-model="form.name" placeholder="例如：2026年Q2评比活动" />
         </el-form-item>
         <el-form-item label="评选周期">
-          <el-input v-model="form.period" placeholder="如：2026Q2" />
+          <el-input v-model="form.period" placeholder="例如：2026Q2" />
         </el-form-item>
         <el-form-item label="开始时间" required>
           <el-date-picker v-model="form.start_time" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" style="width:100%" />
@@ -122,10 +174,24 @@ const paginatedList = computed(() => {
   return batches.value.slice(start, start + pageSize.value)
 })
 
+const statusCount = computed(() => ({
+  active: batches.value.filter(row => row.status === 'active').length,
+  draft: batches.value.filter(row => row.status === 'draft').length,
+  closed: batches.value.filter(row => row.status === 'closed').length,
+}))
+
 function statusClass(status: string) {
   if (status === 'active') return 'success'
   if (status === 'draft') return 'warning'
   return 'info'
+}
+
+function progress(row: any) {
+  return row.total ? Math.round((Number(row.completed || 0) / Number(row.total || 0)) * 100) : 0
+}
+
+function formatDate(value: string) {
+  return value ? value.replace('T', ' ').slice(0, 16) : '-'
 }
 
 function resetForm() {
@@ -193,62 +259,198 @@ onMounted(loadBatches)
 </script>
 
 <style scoped>
+.batch-hero {
+  align-items: center;
+}
+
+.batch-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.metric-value.success { color: var(--admin-success); }
+.metric-value.warning { color: var(--admin-warning); }
+.metric-value.muted { color: var(--admin-muted); }
+
+.batch-work-card :deep(.el-card__body) {
+  padding: 20px 22px 18px;
+}
+
 .batch-list {
+  display: grid;
+  gap: 16px;
+}
+
+.batch-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: 7px minmax(0, 1fr) 132px;
+  gap: 18px;
+  padding: 16px;
+  border: 1px solid var(--admin-border);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(248, 251, 255, 0.92), #fff 42%),
+    #fff;
+  box-shadow: 0 10px 28px rgba(15, 35, 59, 0.055);
+}
+
+.batch-status-rail {
+  border-radius: 999px;
+  min-height: 100%;
+}
+
+.batch-status-rail.active { background: var(--admin-success); }
+.batch-status-rail.draft { background: var(--admin-warning); }
+.batch-status-rail.closed { background: var(--admin-muted); }
+
+.batch-content {
+  min-width: 0;
   display: grid;
   gap: 14px;
 }
 
-.batch-card {
+.batch-header {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 18px;
-  padding: 18px;
-  border: 1px solid var(--admin-border);
-  border-radius: 12px;
-  background: #fff;
+  grid-template-columns: minmax(0, 1fr) 126px;
+  gap: 20px;
+  align-items: start;
 }
 
-.batch-top {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.batch-top h2 {
-  margin: 0;
-  color: var(--admin-text);
-  font-size: 18px;
+.batch-eyebrow {
+  color: var(--admin-accent);
+  font-size: 12px;
   font-weight: 900;
 }
 
-.batch-top p {
-  margin: 7px 0 0;
-  color: var(--admin-muted);
-  font-size: 13px;
-}
-
-.batch-progress {
-  margin-top: 18px;
-  display: grid;
-  gap: 8px;
-}
-
-.progress-label {
-  display: flex;
-  justify-content: space-between;
-  color: var(--admin-muted);
-  font-size: 13px;
-}
-
-.progress-label b {
+.batch-title-block h2 {
+  margin: 5px 0 0;
   color: var(--admin-text);
+  font-size: 21px;
+  line-height: 1.28;
+  font-weight: 900;
 }
 
-.workflow-actions {
+.batch-time {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--admin-muted);
+  font-size: 13px;
+}
+
+.batch-time em {
+  font-style: normal;
+  color: var(--admin-faint);
+}
+
+.batch-scoreboard {
   display: grid;
-  grid-template-columns: repeat(2, 112px);
+  justify-items: end;
+  gap: 7px;
+}
+
+.score-number {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  color: var(--admin-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.score-number strong {
+  font-size: 26px;
+  line-height: 1;
+  font-weight: 900;
+}
+
+.score-number span {
+  color: var(--admin-muted);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.batch-scoreboard small {
+  color: var(--admin-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.progress-block {
+  padding: 0 2px;
+}
+
+.progress-track {
+  width: 100%;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e8eef6;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #0891b2, #0369a1);
+}
+
+.workflow-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(132px, 1fr));
   gap: 10px;
+}
+
+.workflow-step {
+  min-height: 58px;
+  padding: 10px 12px;
+  border: 1px solid var(--admin-border);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--admin-text);
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(15, 35, 59, 0.035);
+  transition: border-color .18s ease, transform .18s ease, box-shadow .18s ease;
+}
+
+.workflow-step:hover {
+  transform: translateY(-1px);
+  border-color: #7dd3fc;
+  box-shadow: 0 8px 18px rgba(3, 105, 161, 0.10);
+}
+
+.workflow-step span {
+  display: block;
+  color: var(--admin-faint);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.workflow-step strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.primary-step {
+  border-color: #93c5fd;
+  background: #eef6ff;
+  color: var(--admin-primary-2);
+}
+
+.batch-actions {
+  display: grid;
   align-content: center;
+  gap: 10px;
+}
+
+.batch-actions :deep(.el-button) {
+  width: 100%;
+  min-height: 42px;
 }
 
 .danger-item {
@@ -257,10 +459,28 @@ onMounted(loadBatches)
 
 @media (max-width: 1280px) {
   .batch-card {
+    grid-template-columns: 7px minmax(0, 1fr);
+  }
+
+  .batch-actions {
+    grid-column: 2;
+    grid-template-columns: repeat(2, minmax(120px, 160px));
+    justify-content: end;
+  }
+}
+
+@media (max-width: 900px) {
+  .batch-metrics,
+  .workflow-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .batch-header {
     grid-template-columns: 1fr;
   }
-  .workflow-actions {
-    grid-template-columns: repeat(5, max-content);
+
+  .batch-scoreboard {
+    justify-items: start;
   }
 }
 </style>
