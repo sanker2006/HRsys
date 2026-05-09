@@ -268,9 +268,9 @@ watch(() => props.relationId, loadPage)
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  padding: 14px 16px;
+  padding: 14px 16px 16px;
   color: #fff;
-  background: linear-gradient(135deg, #0f172a 0%, #075985 100%);
+  background: linear-gradient(145deg, #0f3b5f 0%, #0369a1 100%);
   box-shadow: 0 10px 26px rgba(15, 23, 42, .14);
 }
 .dock-kicker { font-size: 12px; color: rgba(255,255,255,.72); }
@@ -289,7 +289,7 @@ watch(() => props.relationId, loadPage)
 }
 .quota-title { font-size: 14px; font-weight: 900; color: var(--hr-text); margin-bottom: 10px; }
 .quota-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.quota-grid div { border-radius: 10px; background: #f8fafc; padding: 10px; }
+.quota-grid div { border-radius: 12px; background: #f8fafc; padding: 10px; border: 1px solid rgba(226,232,240,.9); }
 .quota-grid span, .quota-grid em { display: block; font-size: 11px; color: var(--hr-muted); font-style: normal; }
 .quota-grid b { display: block; margin: 4px 0 2px; font-size: 18px; color: var(--hr-text); font-variant-numeric: tabular-nums; }
 .person-line { display: flex; align-items: center; gap: 12px; }
@@ -316,7 +316,7 @@ watch(() => props.relationId, loadPage)
 .group-title { margin: 18px 2px 10px; font-size: 17px; color: var(--hr-text); font-weight: 900; }
 .question-card {
   margin-bottom: 12px;
-  padding: 16px;
+  padding: 18px;
   border-radius: 14px;
   background: var(--hr-surface);
   border: 1px solid rgba(226,232,240,.95);
@@ -326,8 +326,8 @@ watch(() => props.relationId, loadPage)
 .question-text { flex: 1; min-width: 0; font-size: 16px; line-height: 1.58; color: var(--hr-text); font-weight: 700; }
 .score-pill {
   min-width: 58px;
-  padding: 6px 8px;
-  border-radius: 10px;
+  padding: 7px 10px;
+  border-radius: 12px;
   text-align: center;
   color: var(--hr-accent-strong);
   background: var(--hr-primary-soft);
@@ -336,7 +336,7 @@ watch(() => props.relationId, loadPage)
   font-variant-numeric: tabular-nums;
 }
 .meta-line { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; }
-.meta-line span { padding: 5px 9px; border-radius: 999px; background: #f1f5f9; color: var(--hr-muted); font-size: 12px; }
+.meta-line span { padding: 6px 10px; border-radius: 999px; background: #f1f5f9; color: var(--hr-muted); font-size: 12px; font-weight: 700; }
 .completed { margin: 16px; padding: 13px; border-radius: 12px; text-align: center; color: var(--hr-success); background: #e8f8ef; font-weight: 900; border: 1px solid #bbf7d0; }
 .actions {
   position: fixed;
@@ -347,11 +347,12 @@ watch(() => props.relationId, loadPage)
   display: flex;
   gap: 10px;
   padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px));
-  background: #fff;
+  background: rgba(255,255,255,.98);
+  backdrop-filter: blur(12px);
   border-top: 1px solid var(--hr-border);
   box-shadow: 0 -8px 24px rgba(15,23,42,.10);
 }
-.btn { flex: 1; height: 50px; border-radius: 12px; font-size: 15px; font-weight: 900; }
+.btn { flex: 1; height: 52px; border-radius: 12px; font-size: 15px; font-weight: 900; }
 .secondary { color: var(--hr-accent-strong) !important; border: 1px solid #7dd3fc !important; background: #e0f2fe !important; }
 .ghost { color: var(--hr-text) !important; border: 1px solid #cbd5e1 !important; background: #f8fafc !important; }
 .primary { color: #fff !important; background: #0369a1 !important; border: 1px solid #0369a1 !important; box-shadow: 0 10px 22px rgba(3,105,161,.28); }

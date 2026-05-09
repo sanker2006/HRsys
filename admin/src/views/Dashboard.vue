@@ -34,26 +34,26 @@
     </section>
 
     <section class="flow-grid">
-      <button class="flow-card" @click="$router.push('/batch')">
+      <button class="flow-card" type="button" aria-label="进入批次工作流创建批次" @click="$router.push('/batch')">
         <span class="flow-step">01</span>
         <strong>创建批次</strong>
         <em>设置周期、开始和结束时间</em>
       </button>
-      <button class="flow-card">
+      <div class="flow-card" role="group">
         <span class="flow-step">02</span>
         <strong>导入题目</strong>
         <em>按人员绑定业绩与综合评价模板</em>
-      </button>
-      <button class="flow-card">
+      </div>
+      <div class="flow-card" role="group">
         <span class="flow-step">03</span>
         <strong>生成关系</strong>
         <em>自动生成自评、互评和向下评价</em>
-      </button>
-      <button class="flow-card">
+      </div>
+      <div class="flow-card" role="group">
         <span class="flow-step">04</span>
         <strong>监控进度</strong>
         <em>检查未完成、草稿和分数情况</em>
-      </button>
+      </div>
     </section>
 
     <el-card class="work-card">
@@ -177,6 +177,8 @@ onMounted(async () => {
 }
 
 .flow-card:hover { border-color: #7dd3fc; transform: translateY(-1px); }
+.flow-card[role="group"] { cursor: default; }
+.flow-card[role="group"]:hover { border-color: rgba(223, 231, 241, 0.95); transform: none; }
 .flow-step { color: var(--admin-accent); font-size: 12px; font-weight: 900; }
 .flow-card strong { display: block; margin-top: 10px; color: var(--admin-text); font-size: 17px; }
 .flow-card em { display: block; margin-top: 6px; color: var(--admin-muted); font-size: 12px; line-height: 1.5; font-style: normal; }

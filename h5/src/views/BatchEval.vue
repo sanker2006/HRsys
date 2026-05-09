@@ -38,6 +38,8 @@
         :key="item.id"
         class="person-row"
         :class="{ blocked: props.type === 'downward' && !item.can_submit && item.status !== 'completed' }"
+        type="button"
+        :aria-label="`${item.target_name}，${rowStatusText(item)}`"
         @click="openPerson(item)"
       >
         <div class="avatar">{{ item.target_name?.charAt(0) || '?' }}</div>

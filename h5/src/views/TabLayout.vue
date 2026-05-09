@@ -69,7 +69,7 @@ watch(() => route.path, (p) => {
 .slide-left-leave-active,
 .slide-right-enter-active,
 .slide-right-leave-active {
-  transition: all 0.22s ease;
+  transition: color 0.22s ease, background 0.22s ease, transform 0.22s ease;
 }
 .slide-left-enter-from {
   opacity: 0;

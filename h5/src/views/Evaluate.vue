@@ -22,7 +22,7 @@
           <b>{{ completedCount(grouped[type]) }}/{{ grouped[type].length }}</b>
         </div>
 
-        <button v-if="type !== 'self'" class="task-card" @click="goBatch(type)">
+        <button v-if="type !== 'self'" class="task-card" type="button" :aria-label="`进入${typeLabel[type]}`" @click="goBatch(type)">
           <div class="task-icon" :class="type">{{ typeIcon[type] }}</div>
           <div class="task-main">
             <div class="task-title">{{ typeLabel[type] }}</div>
@@ -33,7 +33,7 @@
         </button>
 
         <div v-else class="self-list">
-          <button v-for="r in grouped[type]" :key="r.id" class="self-row" @click="goForm(r)">
+          <button v-for="r in grouped[type]" :key="r.id" class="self-row" type="button" :aria-label="`评价${r.target_name}`" @click="goForm(r)">
             <div class="avatar" :class="statusClass(r)">{{ r.target_name.charAt(0) }}</div>
             <div class="self-main">
               <strong>{{ r.target_name }}</strong>

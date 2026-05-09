@@ -1,10 +1,22 @@
 <template>
-  <div class="matrix-page">
+  <div class="admin-page matrix-page">
+    <section class="admin-hero">
+      <div>
+        <h1>评价矩阵</h1>
+        <p>控制本批次自动生成哪些评价关系。员工互评固定为本部门内部互评，领导不生成自评。</p>
+      </div>
+      <div class="hero-actions">
+        <el-button @click="$router.back()">返回批次</el-button>
+        <el-button type="warning" plain @click="handleReset">重置默认</el-button>
+        <el-button type="primary" :loading="saving" @click="handleSave">保存配置</el-button>
+      </div>
+    </section>
+
     <el-alert type="info" :closable="false" class="matrix-alert">
-      评价矩阵决定本批次自动生成哪些评价关系。领导不生成自评；普通员工同级互评固定为本部门内部互评。
+      评价矩阵决定本批次的关系生成口径。主要领导评价全部部门负责人和员工；分管领导只评价负责部门范围内人员。
     </el-alert>
 
-    <el-card v-loading="loading">
+    <el-card class="work-card" v-loading="loading">
       <section class="section-block">
         <div class="section-header">
           <span class="section-mark">自</span>
@@ -12,8 +24,8 @@
           <el-tag type="info" size="small">部门负责人、员工</el-tag>
         </div>
         <p class="section-desc">主要领导和分管领导不参与自评。部门负责人和员工自评关系默认启用。</p>
-        <el-table :data="selfRows" border size="small">
-          <el-table-column prop="from_role" label="评价人角色" width="180">
+        <el-table :data="selfRows" class="admin-table compact-table">
+          <el-table-column prop="from_role" label="评价人角色" width="190">
             <template #default="{ row }">
               <span class="role-tag" :class="row.from_role">{{ roleText[row.from_role] }}</span>
             </template>
@@ -21,7 +33,7 @@
           <el-table-column label="评价对象" align="center">
             <template #default>本人</template>
           </el-table-column>
-          <el-table-column label="状态" align="center" width="120">
+          <el-table-column label="状态" align="center" width="130">
             <template #default>
               <el-tag type="success" size="small">已启用</el-tag>
             </template>
@@ -71,14 +83,14 @@
           <span class="section-title">向下评价</span>
           <el-tag type="warning" size="small">按角色生成</el-tag>
         </div>
-        <p class="section-desc">分管领导只评价所负责部门；主要领导评价全部部门负责人和员工。</p>
-        <el-table :data="downwardRows" border size="small">
-          <el-table-column label="评价人角色" width="180">
+        <p class="section-desc">分管领导只评价负责部门；主要领导评价所有部门负责人和员工；部门负责人评价本部门员工。</p>
+        <el-table :data="downwardRows" class="admin-table compact-table">
+          <el-table-column label="评价人角色" width="190">
             <template #default="{ row }">
               <span class="role-tag" :class="row.from_role">{{ roleText[row.from_role] }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="被评价角色" width="180">
+          <el-table-column label="被评价角色" width="190">
             <template #default="{ row }">
               <span class="role-tag" :class="row.to_role">{{ roleText[row.to_role] }}</span>
             </template>
@@ -86,7 +98,7 @@
           <el-table-column label="规则说明">
             <template #default="{ row }">{{ ruleText(row) }}</template>
           </el-table-column>
-          <el-table-column label="启用" width="100" align="center">
+          <el-table-column label="启用" width="120" align="center">
             <template #default="{ row }">
               <el-switch v-model="row.enabled" :active-value="1" :inactive-value="0" />
             </template>
@@ -96,7 +108,7 @@
 
       <div class="actions">
         <el-button @click="$router.back()">返回</el-button>
-        <el-button type="warning" @click="handleReset">重置为默认</el-button>
+        <el-button type="warning" plain @click="handleReset">重置为默认</el-button>
         <el-button type="primary" :loading="saving" @click="handleSave">保存配置</el-button>
       </div>
     </el-card>
@@ -215,88 +227,131 @@ onMounted(load)
 <style scoped>
 .matrix-alert {
   margin-bottom: 16px;
+  border-radius: 10px;
 }
+
 .section-block {
-  padding-bottom: 22px;
-  margin-bottom: 24px;
-  border-bottom: 1px solid #edf0f5;
+  padding-bottom: 24px;
+  margin-bottom: 26px;
+  border-bottom: 1px solid var(--admin-border);
 }
+
 .section-block:last-of-type {
   border-bottom: none;
   margin-bottom: 0;
 }
+
 .section-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   margin-bottom: 8px;
-  color: #1f2d3d;
+  color: var(--admin-text);
   font-size: 15px;
-  font-weight: 700;
+  font-weight: 800;
 }
+
 .section-mark {
-  width: 26px;
-  height: 26px;
-  border-radius: 6px;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #edf4ff;
-  color: #2f6fbd;
-  font-size: 13px;
+  background: var(--admin-primary-soft);
+  color: var(--admin-accent);
+  font-size: 14px;
+  font-weight: 900;
 }
+
 .section-title {
-  font-size: 15px;
+  font-size: 16px;
 }
+
 .section-desc {
-  margin: 0 0 14px 34px;
-  color: #667085;
+  margin: 0 0 16px 40px;
+  color: var(--admin-muted);
   font-size: 13px;
 }
-.eval-group {
-  margin: 12px 0 12px 34px;
-  padding: 12px 14px;
-  border: 1px solid #edf0f5;
-  border-radius: 8px;
-  background: #fafbfc;
+
+.compact-table {
+  margin-left: 40px;
+  width: calc(100% - 40px);
 }
+
+.eval-group {
+  margin: 12px 0 12px 40px;
+  padding: 14px 16px;
+  border: 1px solid var(--admin-border);
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
 .group-label {
   display: flex;
   align-items: center;
   gap: 12px;
 }
+
 .group-options {
-  margin-top: 10px;
-  margin-left: 92px;
+  margin-top: 12px;
+  margin-left: 94px;
 }
+
 .role-tag {
-  display: inline-block;
-  min-width: 72px;
-  padding: 3px 10px;
-  border-radius: 4px;
+  display: inline-flex;
+  min-width: 82px;
+  min-height: 28px;
+  padding: 4px 11px;
+  border-radius: 999px;
   font-size: 12px;
-  text-align: center;
+  font-weight: 800;
+  align-items: center;
+  justify-content: center;
 }
+
 .role-tag.main_leader {
-  background: #fef0f0;
-  color: #c45656;
+  background: #fef2f2;
+  color: #b91c1c;
 }
+
 .role-tag.division_leader {
-  background: #fdf6ec;
-  color: #b88230;
+  background: #fff7ed;
+  color: #c2410c;
 }
+
 .role-tag.manager {
-  background: #f0f9eb;
-  color: #529b2e;
+  background: #ecfdf5;
+  color: #047857;
 }
+
 .role-tag.staff {
-  background: #ecf5ff;
-  color: #337ecc;
+  background: #eef6fb;
+  color: var(--admin-accent);
 }
+
 .actions {
   display: flex;
-  justify-content: center;
+  justify-content: flex-end;
   gap: 10px;
-  margin-top: 20px;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--admin-border);
+}
+
+@media (max-width: 900px) {
+  .compact-table,
+  .eval-group {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .section-desc {
+    margin-left: 0;
+  }
+
+  .group-options {
+    margin-left: 0;
+  }
 }
 </style>

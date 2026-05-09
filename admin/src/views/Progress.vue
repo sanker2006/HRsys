@@ -24,21 +24,21 @@
 
     <el-card v-loading="loading" class="work-card">
       <div v-if="!loading" class="type-stats">
-        <button class="type-card type-self" :class="{ active: activeTab === 'self' }" @click="activeTab = 'self'">
+        <button class="type-card type-self" type="button" aria-label="查看自评进度" :class="{ active: activeTab === 'self' }" @click="activeTab = 'self'">
           <div class="type-icon">自</div>
           <div class="type-body">
             <div class="type-name">自评</div>
             <div class="type-nums">{{ typeStats.self.completed }}已完成 · {{ typeStats.self.pending }}待评 · {{ typeStats.self.total }}总计</div>
           </div>
         </button>
-        <button class="type-card type-peer" :class="{ active: activeTab === 'peer' }" @click="activeTab = 'peer'">
+        <button class="type-card type-peer" type="button" aria-label="查看互评进度" :class="{ active: activeTab === 'peer' }" @click="activeTab = 'peer'">
           <div class="type-icon">互</div>
           <div class="type-body">
             <div class="type-name">互评</div>
             <div class="type-nums">{{ typeStats.peer.completed }}已完成 · {{ typeStats.peer.pending }}待评 · {{ typeStats.peer.total }}总计</div>
           </div>
         </button>
-        <button class="type-card type-down" :class="{ active: activeTab === 'downward' }" @click="activeTab = 'downward'">
+        <button class="type-card type-down" type="button" aria-label="查看向下评价进度" :class="{ active: activeTab === 'downward' }" @click="activeTab = 'downward'">
           <div class="type-icon">下</div>
           <div class="type-body">
             <div class="type-name">向下评估</div>

@@ -211,10 +211,10 @@ async function handleLogin() {
   font-size: 16px;
   font-weight: 800;
   letter-spacing: 0;
-  background: linear-gradient(135deg, #0f172a 0%, #0369a1 100%) !important;
+  background: linear-gradient(145deg, #0f3b5f 0%, #0369a1 100%) !important;
   border: none !important;
   box-shadow: 0 10px 24px rgba(3, 105, 161, 0.24);
-  transition: all 0.2s ease;
+  transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
 .login-btn:hover {
   transform: translateY(-1px);

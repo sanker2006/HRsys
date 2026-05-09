@@ -43,7 +43,7 @@
         <div class="topbar-right">
           <el-tag effect="plain" round>V2.1</el-tag>
           <el-dropdown @command="handleCommand" trigger="click">
-            <button class="user-pill">
+            <button class="user-pill" type="button" aria-label="打开用户菜单">
               <el-icon><Avatar /></el-icon>
               <span>{{ userName }}</span>
               <el-icon class="arrow"><ArrowDown /></el-icon>

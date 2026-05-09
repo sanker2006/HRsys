@@ -7,7 +7,7 @@
           <h1>{{ userName || '用户' }}</h1>
           <p>{{ greeting }}</p>
         </div>
-        <button class="icon-btn" aria-label="退出登录" @click="handleLogout">
+        <button class="icon-btn" type="button" aria-label="退出登录" @click="handleLogout">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
             <polyline points="16 17 21 12 16 7"/>
@@ -54,6 +54,8 @@
         :key="batch.id"
         class="batch-card"
         :class="batchStatusClass(batch)"
+        type="button"
+        :aria-label="`进入${batch.name}`"
         @click="goEvaluate(batch)"
       >
         <div class="batch-head">

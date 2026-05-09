@@ -18,7 +18,7 @@
         </div>
 
         <div class="eval-list">
-          <button v-for="r in h.relations" :key="r.id" class="eval-row" @click="r.status !== 'completed' && router.push(evalPath(r))">
+          <button v-for="r in h.relations" :key="r.id" class="eval-row" type="button" :aria-label="`查看${r.target_name}的评价`" @click="r.status !== 'completed' && router.push(evalPath(r))">
             <div class="avatar" :class="statusClass(r.status)">{{ r.target_name.charAt(0) }}</div>
             <div class="eval-info">
               <strong>{{ r.target_name }}</strong>
