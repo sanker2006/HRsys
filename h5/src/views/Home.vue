@@ -1,112 +1,96 @@
 <template>
   <div class="home-page">
-    <!-- 沉浸式头部 -->
-    <div class="header">
-      <div class="user-card">
+    <section class="work-hero">
+      <div class="hero-top">
         <div class="user-avatar">{{ userName.charAt(0) }}</div>
-        <div class="user-info">
-          <h2>{{ userName }}</h2>
+        <div class="user-copy">
+          <h1>{{ userName || '用户' }}</h1>
           <p>{{ greeting }}</p>
         </div>
-        <button class="logout-btn" @click="handleLogout">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <button class="icon-btn" aria-label="退出登录" @click="handleLogout">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
             <polyline points="16 17 21 12 16 7"/>
             <line x1="21" y1="12" x2="9" y2="12"/>
           </svg>
         </button>
       </div>
-      <!-- 摘要数字 -->
-      <div class="summary-strip" v-if="summary">
-        <div class="summary-item">
-          <span class="summary-num">{{ summary.total }}</span>
-          <span class="summary-label">总任务</span>
+
+      <div class="summary-panel" v-if="summary">
+        <div>
+          <span>待完成</span>
+          <b>{{ summary.total - summary.completed }}</b>
         </div>
-        <div class="summary-divider" />
-        <div class="summary-item">
-          <span class="summary-num done">{{ summary.completed }}</span>
-          <span class="summary-label">已完成</span>
+        <div>
+          <span>已完成</span>
+          <b>{{ summary.completed }}</b>
         </div>
-        <div class="summary-divider" />
-        <div class="summary-item">
-          <span class="summary-num pending">{{ summary.total - summary.completed }}</span>
-          <span class="summary-label">待完成</span>
+        <div>
+          <span>总任务</span>
+          <b>{{ summary.total }}</b>
         </div>
       </div>
-    </div>
+    </section>
 
-    <!-- 批次列表 -->
-    <van-pull-refresh v-model="refreshing" @refresh="loadBatches" class="batch-list">
-      <div v-if="batches.length === 0 && !loading" class="empty">
+    <van-pull-refresh v-model="refreshing" @refresh="loadBatches" class="content">
+      <div class="section-title">
+        <strong>评价批次</strong>
+        <span>{{ batches.length }} 个批次</span>
+      </div>
+
+      <div v-if="batches.length === 0 && !loading" class="empty-card">
         <div class="empty-icon">
-          <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
-            <circle cx="32" cy="32" r="28" fill="#f0f4f8"/>
-            <path d="M22 32l8 8 12-14" stroke="#c0cdd9" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <svg width="52" height="52" viewBox="0 0 64 64" fill="none">
+            <circle cx="32" cy="32" r="28" fill="#eef6fb"/>
+            <path d="M22 32l8 8 12-14" stroke="#7aa9c7" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
         </div>
-        <p class="empty-title">暂无待评价任务</p>
-        <p class="empty-desc">完成当前批次后，将在这里查看结果</p>
+        <h2>暂无待评价任务</h2>
+        <p>有新的评比活动后，会在这里显示入口。</p>
       </div>
 
-      <div
+      <button
         v-for="batch in batches"
         :key="batch.id"
-        class="batch-item"
+        class="batch-card"
         :class="batchStatusClass(batch)"
         @click="goEvaluate(batch)"
       >
-        <!-- 左侧状态色条 -->
-        <div class="batch-accent" />
-
-        <!-- 主内容区 -->
-        <div class="batch-body">
-          <div class="batch-header">
-            <h3 class="batch-name">{{ batch.name }}</h3>
-            <div class="batch-badge" :class="batchStatusClass(batch)">
-              {{ batchStatusText(batch) }}
-            </div>
+        <div class="batch-head">
+          <div>
+            <h2>{{ batch.name }}</h2>
+            <p>{{ formatDate(batch.start_time) }} - {{ formatDate(batch.end_time) }}</p>
           </div>
+          <span class="state-pill">{{ batchStatusText(batch) }}</span>
+        </div>
 
-          <div class="batch-meta">
-            <span class="batch-period">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-                <line x1="16" y1="2" x2="16" y2="6"/>
-                <line x1="8" y1="2" x2="8" y2="6"/>
-                <line x1="3" y1="10" x2="21" y2="10"/>
-              </svg>
-              {{ formatDate(batch.start_time) }} - {{ formatDate(batch.end_time) }}
-            </span>
+        <div class="task-row">
+          <div>
+            <span>已完成</span>
+            <b>{{ batch.completed || 0 }}</b>
           </div>
-
-          <!-- 进度条 -->
-          <div class="batch-progress" v-if="batch.progress !== undefined">
-            <van-progress
-              :percentage="batch.progress"
-              :pivot-text="`${batch.progress}%`"
-              :color="batch.progress >= 100 ? '#0f8a5f' : '#0369a1'"
-              :track-color="'rgba(0,0,0,0.08)'"
-              :pivot-color="batch.progress >= 100 ? '#0f8a5f' : '#0369a1'"
-            />
-            <span class="progress-label">{{ batch.completed || 0 }}/{{ batch.total || 0 }} 项已完成</span>
+          <div>
+            <span>待完成</span>
+            <b>{{ Math.max((batch.total || 0) - (batch.completed || 0), 0) }}</b>
+          </div>
+          <div>
+            <span>完成率</span>
+            <b>{{ batch.progress || 0 }}%</b>
           </div>
         </div>
 
-        <!-- 箭头 -->
-        <div class="batch-arrow">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="9 18 15 12 9 6"/>
-          </svg>
+        <div class="progress-track">
+          <div class="progress-fill" :style="{ width: `${batch.progress || 0}%` }" />
         </div>
-      </div>
+      </button>
     </van-pull-refresh>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { closeToast, showLoadingToast, showToast } from 'vant'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { showLoadingToast, closeToast, showToast } from 'vant'
 import { h5Api } from '../api'
 
 const router = useRouter()
@@ -117,9 +101,9 @@ const userName = ref('')
 
 const greeting = computed(() => {
   const h = new Date().getHours()
-  if (h < 12) return '上午好，今日待办已为你整理'
-  if (h < 18) return '下午好，继续完成本批次评价'
-  return '晚上好，请确认今日评价进度'
+  if (h < 12) return '上午好，先处理最紧急的评价任务'
+  if (h < 18) return '下午好，继续完成当前批次评价'
+  return '晚上好，提交前请确认评分是否准确'
 })
 
 const summary = computed(() => {
@@ -130,9 +114,9 @@ const summary = computed(() => {
 })
 
 function batchStatusClass(batch: any) {
-  if (batch.progress >= 100) return 'status-done'
-  if (batch.progress > 0) return 'status-active'
-  return 'status-pending'
+  if (batch.progress >= 100) return 'done'
+  if (batch.progress > 0) return 'active'
+  return 'pending'
 }
 
 function batchStatusText(batch: any) {
@@ -152,10 +136,8 @@ async function loadBatches() {
   try {
     const res: any = await h5Api.getBatches()
     const all: any[] = res.data || []
-    const progressResults = await Promise.allSettled(
-      all.map(b => h5Api.getProgress(b.id))
-    )
-    const withProgress = all.map((b, i) => {
+    const progressResults = await Promise.allSettled(all.map(b => h5Api.getProgress(b.id)))
+    batches.value = all.map((b, i) => {
       const r = progressResults[i]
       if (r.status === 'fulfilled') {
         const p = (r as PromiseFulfilledResult<any>).value?.data
@@ -165,7 +147,6 @@ async function loadBatches() {
       }
       return { ...b, total: 0, completed: 0, progress: 0 }
     })
-    batches.value = withProgress
   } finally {
     loading.value = false
     refreshing.value = false
@@ -199,225 +180,137 @@ onMounted(async () => {
   background: var(--hr-bg);
 }
 
-/* 头部 */
-.header {
-  background: linear-gradient(145deg, #0f172a 0%, #075985 100%);
+.work-hero {
+  padding: calc(env(safe-area-inset-top) + 18px) 18px 20px;
   color: #fff;
-  padding: calc(env(safe-area-inset-top) + 20px) 20px 24px;
-  border-radius: 0 0 22px 22px;
+  background:
+    linear-gradient(145deg, rgba(15, 59, 95, .98), rgba(3, 105, 161, .94)),
+    #0f3b5f;
+  border-radius: 0 0 24px 24px;
   box-shadow: var(--hr-shadow);
 }
 
-.user-card {
+.hero-top {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 20px;
 }
 
 .user-avatar {
   width: 48px;
   height: 48px;
   border-radius: 14px;
-  background: linear-gradient(135deg, rgba(255,255,255,0.25), rgba(255,255,255,0.1));
-  border: 2px solid rgba(255,255,255,0.3);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  place-items: center;
+  background: rgba(255,255,255,.16);
+  border: 1px solid rgba(255,255,255,.24);
   font-size: 22px;
-  font-weight: 700;
-  color: #fff;
-  flex-shrink: 0;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-}
-
-.user-info {
-  flex: 1;
-}
-.user-info h2 {
-  font-size: 20px;
   font-weight: 900;
-  margin-bottom: 3px;
-}
-.user-info p {
-  font-size: 12px;
-  opacity: 0.7;
 }
 
-.logout-btn {
-  background: rgba(255,255,255,0.1);
-  border: 1px solid rgba(255,255,255,0.2);
-  border-radius: 8px;
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: rgba(255,255,255,0.8);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: all 0.2s;
-}
-.logout-btn:active {
-  background: rgba(255,255,255,0.2);
-  transform: scale(0.95);
-}
+.user-copy { flex: 1; min-width: 0; }
+.user-copy h1 { margin: 0; font-size: 21px; line-height: 1.2; font-weight: 900; }
+.user-copy p { margin: 5px 0 0; font-size: 12px; color: rgba(255,255,255,.70); }
 
-/* 摘要条 */
-.summary-strip {
-  display: flex;
-  align-items: center;
-  background: rgba(255,255,255,0.10);
-  border: 1px solid rgba(255,255,255,0.14);
-  border-radius: 10px;
-  padding: 15px 0;
-  margin-top: 4px;
-}
-.summary-item {
-  flex: 1;
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-}
-.summary-num {
-  font-size: 24px;
-  font-weight: 900;
+.icon-btn {
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 12px;
+  background: rgba(255,255,255,.10);
   color: #fff;
-  line-height: 1;
-}
-.summary-num.done { color: #86efac; }
-.summary-num.pending { color: #fde68a; }
-.summary-label {
-  font-size: 11px;
-  color: rgba(255,255,255,0.55);
-  letter-spacing: 0.5px;
-}
-.summary-divider {
-  width: 1px;
-  height: 32px;
-  background: rgba(255,255,255,0.15);
 }
 
-/* 批次列表 */
-.batch-list {
-  padding: 16px 16px 100px;
+.summary-panel {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
 }
 
-.batch-item {
+.summary-panel div {
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255,255,255,.10);
+  border: 1px solid rgba(255,255,255,.14);
+}
+
+.summary-panel span { display: block; font-size: 11px; color: rgba(255,255,255,.62); }
+.summary-panel b { display: block; margin-top: 6px; font-size: 24px; line-height: 1; font-weight: 900; font-variant-numeric: tabular-nums; }
+
+.content {
+  padding: 16px 16px 96px;
+}
+
+.section-title {
   display: flex;
-  align-items: center;
-  background: var(--hr-surface);
-  border: 1px solid rgba(226,232,240,.92);
-  border-radius: 10px;
-  margin-bottom: 12px;
-  overflow: hidden;
-  box-shadow: var(--hr-shadow-soft);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-.batch-item:active {
-  transform: scale(0.985);
-  box-shadow: 0 2px 10px rgba(15,23,42,.08);
-}
-
-.batch-accent {
-  width: 4px;
-  align-self: stretch;
-  flex-shrink: 0;
-}
-.status-active .batch-accent { background: var(--hr-accent); }
-.status-done .batch-accent { background: var(--hr-success); }
-.status-pending .batch-accent { background: #e8bf5a; }
-
-.batch-body {
-  flex: 1;
-  padding: 14px 12px;
-  min-width: 0;
-}
-
-.batch-header {
-  display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
-  margin-bottom: 6px;
+  margin: 2px 2px 12px;
 }
-.batch-name {
-  font-size: 16px;
-  font-weight: 800;
-  color: var(--hr-text);
-  margin: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex: 1;
-  margin-right: 8px;
-}
-.batch-badge {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 3px 8px;
-  border-radius: 20px;
-  flex-shrink: 0;
-}
-.status-active .batch-badge {
-  background: var(--hr-primary-soft);
-  color: var(--hr-accent-strong);
-}
-.status-done .batch-badge {
-  background: rgba(7,193,96,0.1);
-  color: var(--hr-success);
-}
-.status-pending .batch-badge {
-  background: rgba(232,191,90,0.12);
-  color: #b88a1e;
+.section-title strong { font-size: 18px; color: var(--hr-text); }
+.section-title span { font-size: 12px; color: var(--hr-muted); }
+
+.batch-card,
+.empty-card {
+  width: 100%;
+  margin-bottom: 13px;
+  padding: 16px;
+  border: 1px solid var(--hr-border);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: var(--hr-shadow-soft);
+  text-align: left;
 }
 
-.batch-meta {
-  margin-bottom: 10px;
-}
-.batch-period {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  color: var(--hr-muted);
+.batch-card {
+  display: grid;
+  gap: 14px;
 }
 
-.batch-progress {
+.batch-head {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  justify-content: space-between;
+  gap: 12px;
 }
-.progress-label {
-  font-size: 11px;
-  color: var(--hr-muted);
+.batch-head h2 { margin: 0; color: var(--hr-text); font-size: 17px; line-height: 1.35; font-weight: 900; }
+.batch-head p { margin: 5px 0 0; color: var(--hr-muted); font-size: 12px; }
+
+.state-pill {
+  align-self: flex-start;
+  min-height: 26px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+.batch-card.active .state-pill { color: var(--hr-accent-strong); background: #e0f2fe; }
+.batch-card.done .state-pill { color: var(--hr-success); background: #e8f8ef; }
+.batch-card.pending .state-pill { color: #9a5b00; background: #fff4d8; }
+
+.task-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.task-row div { padding: 10px; border-radius: 10px; background: #f8fafc; }
+.task-row span { display: block; color: var(--hr-muted); font-size: 11px; }
+.task-row b { display: block; margin-top: 5px; color: var(--hr-text); font-size: 18px; line-height: 1; font-weight: 900; }
+
+.progress-track {
+  height: 7px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--hr-accent-strong), #38bdf8);
 }
 
-.batch-arrow {
-  padding-right: 14px;
-  color: #c0cdd9;
-  flex-shrink: 0;
-}
-
-/* 空状态 */
-.empty {
-  text-align: center;
-  padding: 48px 24px;
-}
-.empty-icon {
-  margin-bottom: 16px;
-}
-.empty-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--hr-text);
-  margin: 0 0 6px;
-}
-.empty-desc {
-  font-size: 13px;
-  color: var(--hr-muted);
-  margin: 0;
-}
+.empty-card { text-align: center; padding: 42px 20px; }
+.empty-card h2 { margin: 10px 0 5px; font-size: 17px; color: var(--hr-text); }
+.empty-card p { margin: 0; font-size: 13px; color: var(--hr-muted); }
 </style>

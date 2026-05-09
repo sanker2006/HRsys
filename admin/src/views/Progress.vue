@@ -1,18 +1,11 @@
 <template>
-  <div class="progress-page">
-    <el-card v-loading="loading">
-      <template #header>
-        <div class="header">
-          <span>进度监控</span>
-          <el-button size="small" @click="$router.back()">返回</el-button>
-        </div>
-      </template>
-
+  <div class="admin-page progress-page">
+    <section class="admin-hero">
       <div v-if="batch" class="batch-info">
         <div class="batch-title-row">
           <span class="batch-name">{{ batch.name }}</span>
           <span class="batch-period">{{ batch.period }}</span>
-          <el-tag :type="statusType[batch.status] || 'info'" size="small">{{ statusText[batch.status] || batch.status }}</el-tag>
+          <span class="status-chip" :class="statusClass(batch.status)">{{ statusText[batch.status] || batch.status }}</span>
         </div>
         <div class="batch-meta">{{ batch.start_time }} ~ {{ batch.end_time }}</div>
         <div class="overall-bar">
@@ -24,7 +17,12 @@
           <el-progress :percentage="totalProgress" :stroke-width="14" :color="progressColor" />
         </div>
       </div>
+      <div class="hero-actions">
+        <el-button @click="$router.back()">返回批次</el-button>
+      </div>
+    </section>
 
+    <el-card v-loading="loading" class="work-card">
       <div v-if="!loading" class="type-stats">
         <button class="type-card type-self" :class="{ active: activeTab === 'self' }" @click="activeTab = 'self'">
           <div class="type-icon">自</div>
@@ -50,7 +48,7 @@
       </div>
     </el-card>
 
-    <el-card class="table-card">
+    <el-card class="work-card table-card">
       <el-tabs v-model="activeTab">
         <el-tab-pane name="self" label="自评进度">
           <ProgressTable
@@ -110,7 +108,6 @@ const downwardPage = ref(1)
 const downwardPageSize = ref(20)
 const activeTab = ref('self')
 
-const statusType: Record<string, TagType> = { draft: 'warning', active: 'success', closed: 'info' }
 const statusText: Record<string, string> = { draft: '草稿', active: '进行中', closed: '已结束' }
 const statusTag: Record<string, TagType> = { completed: 'success', draft: 'warning', pending: 'info' }
 const statusTagText: Record<string, string> = { completed: '已完成', draft: '草稿', pending: '待评' }
@@ -133,6 +130,11 @@ const totalStats = computed(() => ({
 }))
 const totalProgress = computed(() => totalStats.value.total ? Math.round((totalStats.value.completed / totalStats.value.total) * 100) : 0)
 const progressColor = computed(() => totalProgress.value >= 80 ? '#67c23a' : totalProgress.value >= 40 ? '#e6a23c' : '#909399')
+function statusClass(status: string) {
+  if (status === 'active') return 'success'
+  if (status === 'draft') return 'warning'
+  return 'info'
+}
 
 const ProgressTable = defineComponent({
   props: {
@@ -232,18 +234,17 @@ onMounted(async () => {
 
 <style scoped>
 .progress-page { min-height: 100%; }
-.header { display: flex; justify-content: space-between; align-items: center; font-size: 15px; font-weight: 600; }
-.batch-info { padding: 4px 0 16px; }
+.batch-info { flex: 1; min-width: 0; }
 .batch-title-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
-.batch-name { font-size: 18px; font-weight: 700; color: #1a2332; }
-.batch-period { font-size: 13px; color: #666; background: #f1f3f4; padding: 2px 8px; border-radius: 4px; }
-.batch-meta { font-size: 13px; color: #888; margin-bottom: 14px; }
-.overall-bar { background: #f8f9fb; border-radius: 10px; padding: 12px 16px 8px; margin-top: 6px; }
-.bar-label { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; font-size: 13px; color: #555; }
-.bar-label b { font-size: 18px; color: #1a2332; }
-.bar-sub { font-size: 12px; color: #999; }
+.batch-name { font-size: 22px; font-weight: 900; color: #fff; }
+.batch-period { font-size: 13px; color: rgba(255,255,255,.82); background: rgba(255,255,255,.12); padding: 3px 9px; border-radius: 999px; }
+.batch-meta { font-size: 13px; color: rgba(255,255,255,.72); margin-bottom: 14px; }
+.overall-bar { background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.16); border-radius: 12px; padding: 12px 16px 8px; margin-top: 6px; max-width: 720px; }
+.bar-label { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; font-size: 13px; color: rgba(255,255,255,.78); }
+.bar-label b { font-size: 20px; color: #fff; }
+.bar-sub { font-size: 12px; color: rgba(255,255,255,.62); }
 .type-stats { display: flex; gap: 10px; margin-top: 4px; }
-.type-card { flex: 1; display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 10px; cursor: pointer; border: 1.5px solid transparent; text-align: left; background: #fff; }
+.type-card { flex: 1; display: flex; align-items: center; gap: 12px; padding: 16px; border-radius: 12px; cursor: pointer; border: 1.5px solid transparent; text-align: left; background: #fff; }
 .type-card.active { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
 .type-self { background: linear-gradient(135deg, #e6f0ff 0%, #dbeeff 100%); border-color: #bfd9ff; }
 .type-peer { background: linear-gradient(135deg, #e8f7e8 0%, #d8f0d8 100%); border-color: #bde8bd; }
@@ -251,7 +252,7 @@ onMounted(async () => {
 .type-icon { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,.7); font-weight: 700; }
 .type-name { font-size: 15px; font-weight: 700; color: #1a2332; margin-bottom: 4px; }
 .type-nums { font-size: 12px; color: #666; }
-.table-card { margin-top: 12px; }
+.table-card { margin-top: 0; }
 .eval-table { font-size: 13px; border-radius: 8px; overflow: hidden; }
 .total-val { color: #1a2332; font-size: 13px; }
 .pagination-wrap { margin-top: 14px; display: flex; justify-content: flex-end; align-items: center; gap: 12px; }

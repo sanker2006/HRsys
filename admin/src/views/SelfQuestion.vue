@@ -1,16 +1,27 @@
 <template>
-  <div class="sq-page">
-    <el-card v-loading="loading">
+  <div class="admin-page sq-page">
+    <section class="admin-hero">
+      <div>
+        <h1>题目模板</h1>
+        <p>按员工绑定业绩评价和综合评价题目；导入后才能进入完整评价流程。</p>
+      </div>
+      <div class="hero-actions">
+        <el-button @click="downloadTemplate">下载模板</el-button>
+        <el-upload action="" :before-upload="handleUpload" accept=".csv" :show-file-list="false">
+          <el-button type="primary">导入 CSV</el-button>
+        </el-upload>
+        <el-button type="danger" plain @click="handleClear" :disabled="list.length === 0">清除全部</el-button>
+      </div>
+    </section>
+
+    <el-card v-loading="loading" class="work-card">
       <template #header>
-        <div class="header">
-          <span>自评题目导入</span>
-          <el-space>
-            <el-button @click="downloadTemplate">下载模板</el-button>
-            <el-upload action="" :before-upload="handleUpload" accept=".csv" :show-file-list="false">
-              <el-button type="primary">导入 CSV</el-button>
-            </el-upload>
-            <el-button type="danger" @click="handleClear" :disabled="list.length === 0">清除全部</el-button>
-          </el-space>
+        <div class="card-titlebar">
+          <div class="card-title">
+            <strong>已导入题目</strong>
+            <span>当前批次共 {{ list.length }} 名人员已绑定题目。</span>
+          </div>
+          <el-button @click="$router.back()">返回批次</el-button>
         </div>
       </template>
 
@@ -18,7 +29,7 @@
         模板为单表双区：姓名、工号、业绩题1-10/业绩分值1-10、综合题1-5/综合分值1-5。后端会校验工号存在、姓名匹配、业绩合计 70 分、综合合计 30 分，分值最多 1 位小数。
       </el-alert>
 
-      <el-table :data="list" stripe v-if="list.length > 0">
+      <el-table :data="list" class="admin-table question-table" v-if="list.length > 0">
         <el-table-column prop="employee_no" label="工号" width="120" />
         <el-table-column prop="user_name" label="姓名" width="120" />
         <el-table-column label="业绩评价">
@@ -40,9 +51,6 @@
       </el-table>
       <el-empty v-else description="暂无自评题目，请导入模板数据" />
 
-      <div class="footer">
-        <el-button @click="$router.back()">返回</el-button>
-      </div>
     </el-card>
 
     <el-dialog v-model="previewVisible" title="导入结果" width="820px">
@@ -169,10 +177,23 @@ onMounted(loadList)
 </script>
 
 <style scoped>
-.header { display: flex; justify-content: space-between; align-items: center; }
 .tip { margin-bottom: 16px; }
-.q-line { margin-bottom: 4px; line-height: 1.5; }
-.q-index { color: #64748b; margin-right: 6px; }
-.q-score { color: #409eff; margin-left: 8px; }
-.footer { margin-top: 16px; text-align: center; }
+.q-line {
+  margin-bottom: 7px;
+  line-height: 1.55;
+  color: var(--admin-text);
+}
+.q-index {
+  display: inline-flex;
+  justify-content: center;
+  min-width: 28px;
+  margin-right: 6px;
+  color: var(--admin-primary-2);
+  font-weight: 900;
+}
+.q-score {
+  color: var(--admin-success);
+  margin-left: 8px;
+  font-weight: 800;
+}
 </style>

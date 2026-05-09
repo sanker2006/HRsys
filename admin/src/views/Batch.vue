@@ -1,57 +1,75 @@
 <template>
-  <div class="batch-page">
-    <el-card>
+  <div class="admin-page batch-page">
+    <section class="admin-hero">
+      <div>
+        <h1>批次工作流</h1>
+        <p>每个批次都按“矩阵配置、题目模板、评价关系、进度监控”的顺序闭环。</p>
+      </div>
+      <div class="hero-actions">
+        <el-button type="primary" @click="openCreate">新建批次</el-button>
+      </div>
+    </section>
+
+    <el-card class="work-card">
       <template #header>
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <span>评选批次</span>
-          <el-button type="primary" @click="showDialog = true">新建批次</el-button>
+        <div class="card-titlebar">
+          <div class="card-title">
+            <strong>评比活动</strong>
+            <span>选择一个批次后继续配置或查看当前进度。</span>
+          </div>
         </div>
       </template>
 
-      <el-table :data="paginatedList" stripe v-loading="loading">
-        <el-table-column type="index" label="序号" width="60" align="center" />
-        <el-table-column prop="name" label="批次名称" />
-        <el-table-column prop="period" label="周期" />
-        <el-table-column prop="start_time" label="开始时间" />
-        <el-table-column prop="end_time" label="结束时间" />
-        <el-table-column prop="status" label="状态">
-          <template #default="{ row }">
-            <el-tag :type="statusType[row.status] || 'info'">{{ statusText[row.status] }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="完成进度">
-          <template #default="{ row }">
-            <span>{{ row.completed || 0 }} / {{ row.total || 0 }}</span>
-            <el-progress :percentage="row.total ? Math.round((row.completed / row.total) * 100) : 0" style="width:120px;margin-left:8px" />
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="320">
-          <template #default="{ row }">
-            <el-button size="small" @click="$router.push(`/matrix/${row.id}`)">评估矩阵</el-button>
-            <el-button size="small" @click="$router.push(`/self-question/${row.id}`)">自评题目</el-button>
-            <el-button size="small" @click="$router.push(`/relation/${row.id}`)">评价关系</el-button>
-            <el-button size="small" @click="$router.push(`/progress/${row.id}`)">进度</el-button>
-            <el-dropdown split-button size="small" type="default" @click.stop @command="(cmd:string) => handleCommand(cmd, row)" style="margin-left:4px">
-              <span>操作</span>
+      <div v-loading="loading" class="batch-list">
+        <article v-for="row in paginatedList" :key="row.id" class="batch-card">
+          <div class="batch-main">
+            <div class="batch-top">
+              <div>
+                <h2>{{ row.name }}</h2>
+                <p>{{ row.period || '未设置周期' }} · {{ row.start_time }} 至 {{ row.end_time }}</p>
+              </div>
+              <span class="status-chip" :class="statusClass(row.status)">{{ statusText[row.status] || row.status }}</span>
+            </div>
+
+            <div class="batch-progress">
+              <div class="progress-label">
+                <span>完成进度</span>
+                <b>{{ row.completed || 0 }}/{{ row.total || 0 }}</b>
+              </div>
+              <el-progress :percentage="row.total ? Math.round((row.completed / row.total) * 100) : 0" :stroke-width="10" />
+            </div>
+          </div>
+
+          <div class="workflow-actions">
+            <el-button @click="$router.push(`/matrix/${row.id}`)">评估矩阵</el-button>
+            <el-button @click="$router.push(`/self-question/${row.id}`)">题目模板</el-button>
+            <el-button @click="$router.push(`/relation/${row.id}`)">评价关系</el-button>
+            <el-button type="primary" plain @click="$router.push(`/progress/${row.id}`)">进度监控</el-button>
+            <el-dropdown @command="(cmd:string) => handleCommand(cmd, row)">
+              <el-button>
+                更多操作
+                <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+              </el-button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item command="edit">编辑</el-dropdown-item>
-                  <el-dropdown-item command="start" v-if="row.status==='draft'">启动</el-dropdown-item>
-                  <el-dropdown-item command="close" v-if="row.status==='active'">结束</el-dropdown-item>
-                  <el-dropdown-item command="delete" v-if="row.status==='draft'" style="color:#f56c6c">删除</el-dropdown-item>
+                  <el-dropdown-item command="edit">编辑批次</el-dropdown-item>
+                  <el-dropdown-item command="start" v-if="row.status==='draft'">启动批次</el-dropdown-item>
+                  <el-dropdown-item command="close" v-if="row.status==='active'">结束批次</el-dropdown-item>
+                  <el-dropdown-item command="delete" v-if="row.status==='draft'" class="danger-item">删除批次</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
-          </template>
-        </el-table-column>
-      </el-table>
+          </div>
+        </article>
+        <el-empty v-if="!loading && batches.length === 0" description="暂无批次" />
+      </div>
 
-      <div style="margin-top:16px;display:flex;justify-content:flex-end;align-items:center;gap:12px">
-        <span style="color:#606266;font-size:13px">共 {{ batches.length }} 条</span>
+      <div class="pagination-wrap">
+        <span>共 {{ batches.length }} 条</span>
         <el-pagination
           v-model:current-page="currentPage"
           v-model:page-size="pageSize"
-          :page-sizes="[20, 50, 100]"
+          :page-sizes="[10, 20, 50]"
           :total="batches.length"
           layout="sizes, prev, pager, next"
           background
@@ -59,14 +77,13 @@
       </div>
     </el-card>
 
-    <!-- 新建/编辑弹窗 -->
-    <el-dialog v-model="showDialog" :title="editingId ? '编辑批次' : '新建批次'" width="500px">
-      <el-form :model="form" label-width="90px">
+    <el-dialog v-model="showDialog" :title="editingId ? '编辑批次' : '新建批次'" width="520px">
+      <el-form :model="form" label-width="96px">
         <el-form-item label="批次名称" required>
-          <el-input v-model="form.name" placeholder="如：2026年Q1季度评选" />
+          <el-input v-model="form.name" placeholder="如：2026年Q2评比活动" />
         </el-form-item>
         <el-form-item label="评选周期">
-          <el-input v-model="form.period" placeholder="如：2026Q1" />
+          <el-input v-model="form.period" placeholder="如：2026Q2" />
         </el-form-item>
         <el-form-item label="开始时间" required>
           <el-date-picker v-model="form.start_time" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" style="width:100%" />
@@ -84,8 +101,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { batchApi } from '../api'
 
 const batches = ref<any[]>([])
@@ -94,20 +112,30 @@ const showDialog = ref(false)
 const saving = ref(false)
 const editingId = ref<number | null>(null)
 const currentPage = ref(1)
-const pageSize = ref(20)
+const pageSize = ref(10)
 
 const form = reactive({ name: '', period: '', start_time: '', end_time: '' })
-const statusType: Record<string, string> = { draft: 'warning', active: 'success', closed: 'info' }
-const statusText: Record<string, string> = { draft: '草稿', active: '进行中', closed: '已结束' }
+const statusText: Record<string, string> = { draft: '待配置', active: '进行中', closed: '已结束' }
 
 const paginatedList = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value
   return batches.value.slice(start, start + pageSize.value)
 })
 
+function statusClass(status: string) {
+  if (status === 'active') return 'success'
+  if (status === 'draft') return 'warning'
+  return 'info'
+}
+
 function resetForm() {
   Object.assign(form, { name: '', period: '', start_time: '', end_time: '' })
   editingId.value = null
+}
+
+function openCreate() {
+  resetForm()
+  showDialog.value = true
 }
 
 async function loadBatches() {
@@ -122,19 +150,16 @@ async function loadBatches() {
 
 async function handleSave() {
   if (!form.name || !form.start_time || !form.end_time) {
-    ElMessage.warning('请填写必填项')
+    ElMessage.warning('请填写批次名称、开始时间和结束时间')
     return
   }
   saving.value = true
   try {
-    if (editingId.value) {
-      await batchApi.update(editingId.value, form)
-    } else {
-      await batchApi.create(form)
-    }
+    if (editingId.value) await batchApi.update(editingId.value, form)
+    else await batchApi.create(form)
     showDialog.value = false
     resetForm()
-    loadBatches()
+    await loadBatches()
     ElMessage.success('保存成功')
   } finally {
     saving.value = false
@@ -149,20 +174,93 @@ async function handleCommand(cmd: string, row: any) {
   } else if (cmd === 'start') {
     await ElMessageBox.confirm('确认启动该批次？启动后将开始收集评价数据。', '启动批次')
     await batchApi.start(row.id)
-    loadBatches()
+    await loadBatches()
     ElMessage.success('已启动')
   } else if (cmd === 'close') {
     await ElMessageBox.confirm('确认结束该批次？结束后将无法继续评价。', '结束批次')
     await batchApi.close(row.id)
-    loadBatches()
+    await loadBatches()
     ElMessage.success('已结束')
   } else if (cmd === 'delete') {
     await ElMessageBox.confirm('确认删除该批次？', '删除批次')
     await batchApi.delete(row.id)
-    loadBatches()
+    await loadBatches()
     ElMessage.success('已删除')
   }
 }
 
 onMounted(loadBatches)
 </script>
+
+<style scoped>
+.batch-list {
+  display: grid;
+  gap: 14px;
+}
+
+.batch-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  padding: 18px;
+  border: 1px solid var(--admin-border);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.batch-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.batch-top h2 {
+  margin: 0;
+  color: var(--admin-text);
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.batch-top p {
+  margin: 7px 0 0;
+  color: var(--admin-muted);
+  font-size: 13px;
+}
+
+.batch-progress {
+  margin-top: 18px;
+  display: grid;
+  gap: 8px;
+}
+
+.progress-label {
+  display: flex;
+  justify-content: space-between;
+  color: var(--admin-muted);
+  font-size: 13px;
+}
+
+.progress-label b {
+  color: var(--admin-text);
+}
+
+.workflow-actions {
+  display: grid;
+  grid-template-columns: repeat(2, 112px);
+  gap: 10px;
+  align-content: center;
+}
+
+.danger-item {
+  color: var(--admin-danger) !important;
+}
+
+@media (max-width: 1280px) {
+  .batch-card {
+    grid-template-columns: 1fr;
+  }
+  .workflow-actions {
+    grid-template-columns: repeat(5, max-content);
+  }
+}
+</style>

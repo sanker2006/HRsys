@@ -1,15 +1,44 @@
 <template>
-  <div class="user-page">
-    <el-card>
+  <div class="admin-page user-page">
+    <section class="admin-hero">
+      <div>
+        <h1>人员与角色</h1>
+        <p>维护员工、部门负责人、分管领导和主要领导，并配置分管领导负责部门。</p>
+      </div>
+      <div class="hero-actions">
+        <el-upload action="" :before-upload="handleImport" accept=".csv" :show-file-list="false">
+          <el-button>批量导入</el-button>
+        </el-upload>
+        <el-button type="primary" @click="openDialog()">添加用户</el-button>
+      </div>
+    </section>
+
+    <section class="metric-grid user-metrics">
+      <div class="metric-card">
+        <div class="metric-label">人员总数</div>
+        <div class="metric-value">{{ users.length }}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">员工</div>
+        <div class="metric-value">{{ roleCount.staff }}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">部门负责人</div>
+        <div class="metric-value">{{ roleCount.manager }}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">领导层</div>
+        <div class="metric-value">{{ roleCount.leader }}</div>
+      </div>
+    </section>
+
+    <el-card class="work-card">
       <template #header>
-        <div class="header">
-          <span>用户管理</span>
-          <el-space>
-            <el-upload action="" :before-upload="handleImport" accept=".csv" :show-file-list="false">
-              <el-button>批量导入</el-button>
-            </el-upload>
-            <el-button type="primary" @click="openDialog()">添加用户</el-button>
-          </el-space>
+        <div class="card-titlebar">
+          <div class="card-title">
+            <strong>人员列表</strong>
+            <span>可按姓名、工号、部门和角色筛选。</span>
+          </div>
         </div>
       </template>
 
@@ -23,7 +52,7 @@
         </el-select>
       </div>
 
-      <el-table :data="paginatedList" stripe v-loading="loading">
+      <el-table :data="paginatedList" class="admin-table" v-loading="loading">
         <el-table-column type="index" label="序号" width="60" align="center" />
         <el-table-column prop="name" label="姓名" width="100" />
         <el-table-column prop="employee_no" label="工号" width="110" />
@@ -50,7 +79,7 @@
         </el-table-column>
       </el-table>
 
-      <div class="pagination">
+      <div class="pagination-wrap">
         <span>共 {{ filteredList.length }} 条</span>
         <el-pagination
           v-model:current-page="currentPage"
@@ -133,6 +162,11 @@ const form = reactive({
 
 const filteredList = computed(() => users.value)
 const paginatedList = computed(() => filteredList.value.slice((currentPage.value - 1) * pageSize.value, currentPage.value * pageSize.value))
+const roleCount = computed(() => ({
+  staff: users.value.filter(u => u.level === 'staff').length,
+  manager: users.value.filter(u => u.level === 'manager').length,
+  leader: users.value.filter(u => ['main_leader', 'division_leader'].includes(u.level)).length,
+}))
 
 function resetForm() {
   Object.assign(form, { name: '', employee_no: '', department: '', position: '', level: 'staff', phone: '', id_card_tail: '', managed_departments: [] })
@@ -227,7 +261,11 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.header { display: flex; justify-content: space-between; align-items: center; }
-.filters { display: grid; grid-template-columns: 220px 160px 160px; gap: 8px; margin-bottom: 12px; }
-.pagination { margin-top: 16px; display: flex; justify-content: flex-end; align-items: center; gap: 12px; color: #606266; font-size: 13px; }
+.user-metrics .metric-value { font-size: 28px; }
+.filters {
+  display: grid;
+  grid-template-columns: 260px 180px 180px;
+  gap: 10px;
+  margin-bottom: 14px;
+}
 </style>

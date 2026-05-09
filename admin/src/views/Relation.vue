@@ -1,16 +1,46 @@
 <template>
-  <div class="relation-page">
-    <el-card v-loading="loading">
+  <div class="admin-page relation-page">
+    <section class="admin-hero">
+      <div>
+        <h1>评价关系</h1>
+        <p>检查评价人、角色、被评人和状态，确认关系生成范围符合业务规则。</p>
+      </div>
+      <div class="hero-actions">
+        <el-button type="primary" @click="handleGenerate" :loading="generating">自动生成</el-button>
+        <el-button @click="handleExport">导出</el-button>
+        <el-upload action="" :before-upload="handleImport" accept=".csv" :show-file-list="false">
+          <el-button>批量导入</el-button>
+        </el-upload>
+      </div>
+    </section>
+
+    <section class="metric-grid relation-metrics">
+      <div class="metric-card">
+        <div class="metric-label">关系总数</div>
+        <div class="metric-value">{{ allList.length }}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">自评</div>
+        <div class="metric-value">{{ typeCount.self }}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">同级互评</div>
+        <div class="metric-value">{{ typeCount.peer }}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">向下评价</div>
+        <div class="metric-value">{{ typeCount.downward }}</div>
+      </div>
+    </section>
+
+    <el-card v-loading="loading" class="work-card">
       <template #header>
-        <div class="header">
-          <span>评价关系管理</span>
-          <el-space>
-            <el-button type="primary" @click="handleGenerate" :loading="generating">自动生成</el-button>
-            <el-button @click="handleExport">导出</el-button>
-            <el-upload action="" :before-upload="handleImport" accept=".csv" :show-file-list="false">
-              <el-button>批量导入</el-button>
-            </el-upload>
-          </el-space>
+        <div class="card-titlebar">
+          <div class="card-title">
+            <strong>关系列表</strong>
+            <span>可按评价类型和完成状态过滤。</span>
+          </div>
+          <el-button @click="$router.back()">返回批次</el-button>
         </div>
       </template>
 
@@ -29,7 +59,7 @@
         </el-select>
       </div>
 
-      <el-table :data="paginatedList" stripe>
+      <el-table :data="paginatedList" class="admin-table">
         <el-table-column type="index" label="序号" width="60" align="center" />
         <el-table-column prop="evaluator_name" label="评价人" width="110" />
         <el-table-column label="角色" width="110">
@@ -62,7 +92,7 @@
         </el-table-column>
       </el-table>
 
-      <div class="pagination">
+      <div class="pagination-wrap">
         <span>共 {{ filteredList.length }} 条</span>
         <el-pagination
           v-model:current-page="currentPage"
@@ -72,10 +102,6 @@
           layout="sizes, prev, pager, next"
           background
         />
-      </div>
-
-      <div class="footer">
-        <el-button @click="$router.back()">返回</el-button>
       </div>
     </el-card>
   </div>
@@ -120,6 +146,11 @@ const paginatedList = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value
   return filteredList.value.slice(start, start + pageSize.value)
 })
+const typeCount = computed(() => ({
+  self: allList.value.filter(r => r.eval_type === 'self').length,
+  peer: allList.value.filter(r => r.eval_type === 'peer').length,
+  downward: allList.value.filter(r => r.eval_type === 'downward').length,
+}))
 
 async function loadList() {
   loading.value = true
@@ -210,9 +241,7 @@ onMounted(loadList)
 </script>
 
 <style scoped>
-.header { display: flex; justify-content: space-between; align-items: center; }
-.filters { display: flex; gap: 8px; margin-bottom: 12px; }
+.relation-metrics .metric-value { font-size: 28px; }
+.filters { display: flex; gap: 10px; margin-bottom: 14px; }
 .filters .el-select { width: 140px; }
-.pagination { margin-top: 16px; display: flex; justify-content: flex-end; align-items: center; gap: 12px; color: #606266; font-size: 13px; }
-.footer { margin-top: 20px; text-align: center; }
 </style>

@@ -1,50 +1,53 @@
 <template>
   <el-container class="layout-container">
-    <!-- 侧边栏 -->
-    <el-aside width="220px" class="sidebar">
-      <div class="logo">
-        <div class="logo-icon">360</div>
-        <span class="logo-text">HR管理端</span>
+    <el-aside width="248px" class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">HR</div>
+        <div>
+          <div class="brand-title">HRsys</div>
+          <div class="brand-sub">绩效评价控制台</div>
+        </div>
       </div>
-      <el-menu
-        :default-active="$route.path"
-        router
-        class="sidebar-menu"
-        :collapse="false"
-      >
+
+      <el-menu :default-active="$route.path" router class="sidebar-menu">
         <el-menu-item index="/dashboard">
           <el-icon><DataAnalysis /></el-icon>
-          <span>仪表盘</span>
+          <span>运营总览</span>
         </el-menu-item>
         <el-menu-item index="/batch">
           <el-icon><List /></el-icon>
-          <span>批次管理</span>
+          <span>批次工作流</span>
         </el-menu-item>
-        <!-- 注意：评估矩阵/自评题目/评价关系/进度监控 需要先在批次管理中选择批次 -->
         <el-menu-item index="/user">
           <el-icon><User /></el-icon>
-          <span>用户管理</span>
+          <span>人员与角色</span>
         </el-menu-item>
         <el-menu-item index="/department">
           <el-icon><OfficeBuilding /></el-icon>
           <span>部门管理</span>
         </el-menu-item>
       </el-menu>
+
+      <div class="sidebar-note">
+        <strong>V2.1</strong>
+        <span>配置、生成、监控按批次闭环执行。</span>
+      </div>
     </el-aside>
 
-    <!-- 主内容区 -->
-    <el-container>
-      <el-header class="header">
-        <div class="header-left">
-          <span class="page-title">{{ pageTitle }}</span>
+    <el-container class="content-shell">
+      <el-header class="topbar">
+        <div class="topbar-title">
+          <div class="crumb">HRsys / {{ pageTitle }}</div>
+          <h1>{{ pageTitle }}</h1>
         </div>
-        <div class="header-right">
+        <div class="topbar-right">
+          <el-tag effect="plain" round>V2.1</el-tag>
           <el-dropdown @command="handleCommand" trigger="click">
-            <span class="user-info">
+            <button class="user-pill">
               <el-icon><Avatar /></el-icon>
-              {{ userName }}
+              <span>{{ userName }}</span>
               <el-icon class="arrow"><ArrowDown /></el-icon>
-            </span>
+            </button>
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item command="profile">
@@ -67,36 +70,42 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { computed, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import {
-  DataAnalysis, List, User, Avatar, ArrowDown, SwitchButton, OfficeBuilding
+  ArrowDown,
+  Avatar,
+  DataAnalysis,
+  List,
+  OfficeBuilding,
+  SwitchButton,
+  User,
 } from '@element-plus/icons-vue'
 import { authApi } from '../api'
 
 const router = useRouter()
 const route = useRoute()
-const userName = ref('管理员')
+const userName = ref('系统管理员')
 
 onMounted(async () => {
   try {
     const res: any = await authApi.me()
-    userName.value = res.data?.name || '管理员'
+    userName.value = res.data?.name || '系统管理员'
   } catch {}
 })
 
-  const pageTitle = computed(() => {
+const pageTitle = computed(() => {
   const map: Record<string, string> = {
-    '/dashboard': '仪表盘',
-    '/batch': '批次管理',
-    '/user': '用户管理',
+    '/dashboard': '运营总览',
+    '/batch': '批次工作流',
+    '/user': '人员与角色',
     '/department': '部门管理',
   }
-  if (route.path.startsWith('/matrix')) return '评估矩阵配置'
-  if (route.path.startsWith('/self-question')) return '自评题目导入'
-  if (route.path.startsWith('/relation')) return '评价关系管理'
+  if (route.path.startsWith('/matrix')) return '评估矩阵'
+  if (route.path.startsWith('/self-question')) return '题目模板'
+  if (route.path.startsWith('/relation')) return '评价关系'
   if (route.path.startsWith('/progress')) return '进度监控'
-  return map[route.path] || ''
+  return map[route.path] || '控制台'
 })
 
 function handleCommand(cmd: string) {
@@ -110,123 +119,138 @@ function handleCommand(cmd: string) {
 <style scoped>
 .layout-container {
   height: 100vh;
+  background: var(--admin-bg);
 }
 
 .sidebar {
-  background: #304156;
-  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  background:
+    linear-gradient(180deg, rgba(15, 59, 95, 0.98), rgba(15, 35, 59, 0.98)),
+    #0f253b;
+  color: #fff;
+  overflow: hidden;
 }
 
-.logo {
-  height: 60px;
+.brand {
+  height: 76px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 20px;
-  background: #263445;
-  border-bottom: 1px solid #3d5166;
+  gap: 12px;
+  padding: 0 22px;
+  border-bottom: 1px solid rgba(255,255,255,.10);
 }
 
-.logo-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-  background: linear-gradient(135deg, #409EFF, #1976D2);
-  color: #fff;
-  font-size: 13px;
-  font-weight: bold;
+.brand-mark {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
+  background: linear-gradient(135deg, #38bdf8, #0369a1);
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: .4px;
+  box-shadow: 0 10px 20px rgba(3,105,161,.28);
 }
 
-.logo-text {
-  font-size: 15px;
-  font-weight: 600;
-  color: #fff;
-  white-space: nowrap;
-}
+.brand-title { font-size: 18px; font-weight: 900; line-height: 1.2; }
+.brand-sub { margin-top: 3px; color: rgba(255,255,255,.62); font-size: 12px; }
 
 .sidebar-menu {
+  flex: 1;
+  padding: 12px 10px;
   border-right: none;
   background: transparent;
 }
 
 :deep(.el-menu-item) {
-  color: #bfcbd9;
-  height: 50px;
-  line-height: 50px;
-  margin: 4px 8px;
-  border-radius: 6px;
+  height: 46px;
+  margin: 4px 0;
+  border-radius: 9px;
+  color: rgba(255,255,255,.72);
+  font-weight: 700;
 }
 
 :deep(.el-menu-item:hover) {
-  background: #263445 !important;
+  background: rgba(255,255,255,.08) !important;
   color: #fff;
 }
 
 :deep(.el-menu-item.is-active) {
-  background: #409EFF !important;
+  background: rgba(56,189,248,.18) !important;
   color: #fff !important;
+  box-shadow: inset 3px 0 0 #38bdf8;
 }
 
-:deep(.el-menu-item .el-icon) {
-  margin-right: 8px;
-  font-size: 16px;
+.sidebar-note {
+  margin: 14px;
+  padding: 14px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 12px;
+  background: rgba(255,255,255,.06);
+  display: grid;
+  gap: 6px;
 }
 
-.header {
-  height: 60px;
+.sidebar-note strong { font-size: 14px; }
+.sidebar-note span { color: rgba(255,255,255,.62); font-size: 12px; line-height: 1.5; }
+
+.content-shell {
+  min-width: 0;
+}
+
+.topbar {
+  height: 76px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 24px;
-  background: #fff;
-  border-bottom: 1px solid #F0F2F5;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+  gap: 18px;
+  padding: 0 28px;
+  background: rgba(255,255,255,.92);
+  border-bottom: 1px solid rgba(223,231,241,.95);
+  backdrop-filter: blur(12px);
 }
 
-.header-left {
-  display: flex;
-  align-items: center;
+.topbar-title h1 {
+  margin: 3px 0 0;
+  color: var(--admin-text);
+  font-size: 22px;
+  line-height: 1.2;
+  font-weight: 900;
 }
 
-.page-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: #303133;
-}
-
-.header-right {
-  display: flex;
-  align-items: center;
-}
-
-.user-info {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  padding: 6px 12px;
-  border-radius: 6px;
-  color: #606266;
-  font-size: 14px;
-  transition: background 0.2s;
-}
-
-.user-info:hover {
-  background: #F5F7FA;
-}
-
-.arrow {
+.crumb {
+  color: var(--admin-muted);
   font-size: 12px;
-  color: #909399;
+  font-weight: 700;
 }
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.user-pill {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 13px;
+  border: 1px solid var(--admin-border);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--admin-text);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.arrow { color: var(--admin-faint); }
 
 .main-content {
-  background: #F5F7FA;
-  padding: 20px 24px;
+  padding: 22px 28px 32px;
   overflow-y: auto;
 }
 </style>

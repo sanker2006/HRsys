@@ -4,9 +4,9 @@
 
     <section class="summary">
       <div>
-        <div class="summary-kicker">{{ props.type === 'downward' ? '按员工逐一评分' : '按对象逐一互评' }}</div>
+        <div class="summary-kicker">{{ props.type === 'downward' ? '先看状态，再逐人评分' : '按人员逐一完成综合评价' }}</div>
         <div class="summary-title">{{ pageTitle }}</div>
-        <div class="summary-meta">共 {{ currentList.length }} 人，已完成 {{ completedCount }} 人</div>
+        <div class="summary-meta">{{ completedCount }} 人已完成，{{ currentList.length - completedCount }} 人待处理</div>
       </div>
       <div class="summary-count">{{ completedCount }}/{{ currentList.length }}</div>
     </section>
@@ -152,15 +152,15 @@ onMounted(async () => {
   background: var(--hr-bg);
   padding-bottom: 28px;
 }
-.nav { position: sticky; top: 0; z-index: 30; background: #fff; }
+.nav { position: sticky; top: 0; z-index: 40; background: #fff; }
 .summary {
   position: sticky;
   top: 46px;
-  z-index: 25;
+  z-index: 35;
   margin: 0;
   padding: 18px 16px;
   color: #fff;
-  background: linear-gradient(135deg, #0f172a 0%, #075985 100%);
+  background: linear-gradient(145deg, #0f3b5f 0%, #0369a1 100%);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -173,7 +173,7 @@ onMounted(async () => {
 .quota-note {
   margin: 14px 16px;
   padding: 14px;
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--hr-surface);
   border: 1px solid var(--hr-border);
   box-shadow: var(--hr-shadow-soft);
@@ -189,7 +189,7 @@ onMounted(async () => {
   border: 1px solid rgba(226,232,240,.95);
   border-radius: 14px;
   background: var(--hr-surface);
-  padding: 14px;
+  padding: 15px;
   display: grid;
   grid-template-columns: 46px 1fr 18px;
   align-items: center;
@@ -198,7 +198,7 @@ onMounted(async () => {
   box-shadow: var(--hr-shadow-soft);
 }
 .person-row:active { transform: scale(.986); }
-.person-row.blocked { opacity: .62; background: #f8fafc; }
+.person-row.blocked { opacity: .72; background: #f8fafc; }
 .avatar {
   width: 46px;
   height: 46px;
@@ -216,7 +216,7 @@ onMounted(async () => {
 .person-name { font-size: 17px; font-weight: 900; color: var(--hr-text); }
 .person-meta { margin-top: 4px; font-size: 12px; color: var(--hr-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .score-line { margin-top: 7px; display: flex; gap: 10px; color: var(--hr-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
-.status { flex: 0 0 auto; font-size: 12px; padding: 4px 8px; border-radius: 999px; font-weight: 800; }
+.status { flex: 0 0 auto; font-size: 12px; padding: 5px 9px; border-radius: 999px; font-weight: 900; }
 .status.completed { color: var(--hr-success); background: #e8f8ef; }
 .status.draft { color: var(--hr-accent-strong); background: var(--hr-primary-soft); }
 .status.pending { color: #8a5a00; background: #fff7e0; }

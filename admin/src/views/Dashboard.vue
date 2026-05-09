@@ -1,70 +1,112 @@
 <template>
-  <div class="dashboard">
-    <el-row :gutter="16">
-      <el-col :span="6">
-        <el-card shadow="hover">
-          <div class="stat-card">
-            <div class="stat-num">{{ stats.total }}</div>
-            <div class="stat-label">总批次</div>
-          </div>
-        </el-card>
-      </el-col>
-      <el-col :span="6">
-        <el-card shadow="hover">
-          <div class="stat-card">
-            <div class="stat-num" style="color:#67c23a">{{ stats.active }}</div>
-            <div class="stat-label">进行中</div>
-          </div>
-        </el-card>
-      </el-col>
-      <el-col :span="6">
-        <el-card shadow="hover">
-          <div class="stat-card">
-            <div class="stat-num" style="color:#e6a23c">{{ stats.draft }}</div>
-            <div class="stat-label">草稿</div>
-          </div>
-        </el-card>
-      </el-col>
-      <el-col :span="6">
-        <el-card shadow="hover">
-          <div class="stat-card">
-            <div class="stat-num" style="color:#909399">{{ stats.closed }}</div>
-            <div class="stat-label">已结束</div>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
+  <div class="admin-page dashboard">
+    <section class="admin-hero">
+      <div>
+        <h1>运营总览</h1>
+        <p>从批次状态、配置入口和完成进度开始，快速判断今天该处理什么。</p>
+      </div>
+      <div class="hero-actions">
+        <el-button type="primary" @click="$router.push('/batch')">进入批次工作流</el-button>
+      </div>
+    </section>
 
-    <el-card style="margin-top:20px">
+    <section class="metric-grid">
+      <div class="metric-card">
+        <div class="metric-label">全部批次</div>
+        <div class="metric-value">{{ stats.total }}</div>
+        <div class="metric-note">系统内累计评比活动</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">进行中</div>
+        <div class="metric-value success">{{ stats.active }}</div>
+        <div class="metric-note">当前允许员工提交</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">待配置</div>
+        <div class="metric-value warning">{{ stats.draft }}</div>
+        <div class="metric-note">需要启动前检查</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">已结束</div>
+        <div class="metric-value muted">{{ stats.closed }}</div>
+        <div class="metric-note">只读归档批次</div>
+      </div>
+    </section>
+
+    <section class="flow-grid">
+      <button class="flow-card" @click="$router.push('/batch')">
+        <span class="flow-step">01</span>
+        <strong>创建批次</strong>
+        <em>设置周期、开始和结束时间</em>
+      </button>
+      <button class="flow-card">
+        <span class="flow-step">02</span>
+        <strong>导入题目</strong>
+        <em>按人员绑定业绩与综合评价模板</em>
+      </button>
+      <button class="flow-card">
+        <span class="flow-step">03</span>
+        <strong>生成关系</strong>
+        <em>自动生成自评、互评和向下评价</em>
+      </button>
+      <button class="flow-card">
+        <span class="flow-step">04</span>
+        <strong>监控进度</strong>
+        <em>检查未完成、草稿和分数情况</em>
+      </button>
+    </section>
+
+    <el-card class="work-card">
       <template #header>
-        <span>最近批次</span>
+        <div class="card-titlebar">
+          <div class="card-title">
+            <strong>最近批次</strong>
+            <span>按创建顺序展示，选择批次后进入配置和监控。</span>
+          </div>
+        </div>
       </template>
-      <el-table :data="paginatedData" stripe>
-        <el-table-column type="index" label="序号" width="60" align="center" />
-        <el-table-column prop="name" label="批次名称" />
-        <el-table-column prop="period" label="周期" />
-        <el-table-column prop="start_time" label="开始时间" />
-        <el-table-column prop="end_time" label="结束时间" />
-        <el-table-column prop="status" label="状态">
+
+      <el-table :data="paginatedData" class="admin-table" v-loading="loading">
+        <el-table-column prop="name" label="批次名称" min-width="180">
           <template #default="{ row }">
-            <el-tag :type="statusType[row.status] || 'info'">{{ statusText[row.status] || row.status }}</el-tag>
+            <div class="batch-name">{{ row.name }}</div>
+            <div class="batch-period">{{ row.period || '未设置周期' }}</div>
           </template>
         </el-table-column>
-        <el-table-column prop="total" label="关系数" />
-        <el-table-column prop="completed" label="已完成">
+        <el-table-column label="状态" width="120">
           <template #default="{ row }">
-            <span>{{ row.completed }} / {{ row.total }}</span>
+            <span class="status-chip" :class="statusClass(row.status)">{{ statusText[row.status] || row.status }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="时间范围" min-width="240">
+          <template #default="{ row }">
+            <div class="date-range">{{ row.start_time || '-' }}</div>
+            <div class="date-range muted">至 {{ row.end_time || '-' }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column label="完成进度" width="220">
+          <template #default="{ row }">
+            <div class="progress-cell">
+              <span>{{ row.completed || 0 }}/{{ row.total || 0 }}</span>
+              <el-progress :percentage="row.total ? Math.round((row.completed / row.total) * 100) : 0" :stroke-width="8" />
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="140" align="right">
+          <template #default="{ row }">
+            <el-button type="primary" plain @click="$router.push(`/progress/${row.id}`)">查看进度</el-button>
           </template>
         </el-table-column>
       </el-table>
 
       <div class="pagination-wrap">
+        <span>共 {{ batches.length }} 条</span>
         <el-pagination
           v-model:current-page="currentPage"
           v-model:page-size="pageSize"
           :page-sizes="[20, 50, 100]"
           :total="batches.length"
-          layout="total, sizes, prev, pager, next, jumper"
+          layout="sizes, prev, pager, next"
           background
         />
       </div>
@@ -73,15 +115,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { batchApi } from '../api'
 
 const batches = ref<any[]>([])
+const loading = ref(false)
 const currentPage = ref(1)
 const pageSize = ref(20)
 
-const statusType: Record<string, string> = { draft: 'warning', active: 'success', closed: 'info' }
-const statusText: Record<string, string> = { draft: '草稿', active: '进行中', closed: '已结束' }
+const statusText: Record<string, string> = { draft: '待配置', active: '进行中', closed: '已结束' }
 
 const stats = computed(() => ({
   total: batches.value.length,
@@ -95,29 +137,57 @@ const paginatedData = computed(() => {
   return batches.value.slice(start, start + pageSize.value)
 })
 
+function statusClass(status: string) {
+  if (status === 'active') return 'success'
+  if (status === 'draft') return 'warning'
+  return 'info'
+}
+
 onMounted(async () => {
-  const res: any = await batchApi.list()
-  batches.value = res.data || []
+  loading.value = true
+  try {
+    const res: any = await batchApi.list()
+    batches.value = res.data || []
+  } finally {
+    loading.value = false
+  }
 })
 </script>
 
 <style scoped>
-.stat-card {
-  text-align: center;
-  padding: 10px 0;
+.metric-value.success { color: var(--admin-success); }
+.metric-value.warning { color: var(--admin-warning); }
+.metric-value.muted { color: var(--admin-muted); }
+
+.flow-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
 }
-.stat-num {
-  font-size: 32px;
-  font-weight: bold;
-  color: #409eff;
+
+.flow-card {
+  min-height: 118px;
+  padding: 18px;
+  border: 1px solid rgba(223, 231, 241, 0.95);
+  border-radius: 12px;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: var(--admin-shadow-soft);
 }
-.stat-label {
-  margin-top: 8px;
-  color: #999;
-}
-.pagination-wrap {
-  margin-top: 16px;
-  display: flex;
-  justify-content: flex-end;
+
+.flow-card:hover { border-color: #7dd3fc; transform: translateY(-1px); }
+.flow-step { color: var(--admin-accent); font-size: 12px; font-weight: 900; }
+.flow-card strong { display: block; margin-top: 10px; color: var(--admin-text); font-size: 17px; }
+.flow-card em { display: block; margin-top: 6px; color: var(--admin-muted); font-size: 12px; line-height: 1.5; font-style: normal; }
+
+.batch-name { color: var(--admin-text); font-weight: 900; }
+.batch-period { margin-top: 4px; color: var(--admin-muted); font-size: 12px; }
+.date-range { font-size: 13px; color: var(--admin-text); }
+.date-range.muted { margin-top: 3px; color: var(--admin-muted); }
+.progress-cell { display: grid; gap: 8px; color: var(--admin-muted); font-size: 12px; }
+
+@media (max-width: 1200px) {
+  .flow-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 </style>

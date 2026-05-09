@@ -1,106 +1,61 @@
-﻿<template>
+<template>
   <div class="evaluate-page">
-    <van-nav-bar
-      :title="batch?.name || '评价任务'"
-      left-arrow
-      @click-left="router.back()"
-      class="nav-bar"
-    />
+    <van-nav-bar :title="batch?.name || '评价任务'" left-arrow @click-left="router.back()" class="nav-bar" />
 
-    <van-pull-refresh v-model="refreshing" @refresh="loadRelations">
-      <div v-for="(items, type) in grouped" :key="type" class="section">
-        <div class="section-header">
-          <div class="section-title">
-            <div class="section-icon">
-              <svg v-if="type === 'self'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7"/>
-              </svg>
-              <svg v-else-if="type === 'peer'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                <circle cx="9" cy="7" r="4"/>
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-                <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-              </svg>
-              <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="17 11 12 6 7 11"/><polyline points="17 18 12 13 7 18"/>
-              </svg>
-            </div>
-            <span>{{ typeLabel[type] }}</span>
-          </div>
-          <div class="section-count">
-            <span class="count-done">{{ completedCount(items) }}</span>
-            <span class="count-sep">/</span>
-            <span class="count-total">{{ items.length }}</span>
-          </div>
-        </div>
-
-        <div v-if="type !== 'self'" class="batch-entry" @click="goBatch(type as string)">
-          <div class="batch-entry-icon" :class="type as string">
-            <svg v-if="type === 'peer'" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-              <circle cx="9" cy="7" r="4"/>
-              <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-              <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-            </svg>
-            <svg v-else width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="17 11 12 6 7 11"/><polyline points="17 18 12 13 7 18"/>
-            </svg>
-          </div>
-          <div class="batch-entry-main">
-            <div class="batch-entry-title">{{ typeLabel[type] }}</div>
-            <div class="batch-entry-meta">需打分 {{ items.length }} 人 · 已打分 {{ completedCount(items) }} 人</div>
-            <div class="batch-progress">
-              <div class="batch-progress-fill" :style="{ width: progressPercent(items) + '%' }" />
-            </div>
-          </div>
-          <div class="batch-entry-side">
-            <div class="status-tag" :class="groupStatusClass(items)">{{ groupStatusText(items) }}</div>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="arrow-icon">
-              <polyline points="9 18 15 12 9 6"/>
-            </svg>
-          </div>
-        </div>
-
-        <div v-else class="eval-list">
-          <div
-            v-for="r in items"
-            :key="r.id"
-            class="eval-item"
-            @click="goForm(r)"
-          >
-            <div class="eval-avatar" :class="statusClass(r)">{{ r.target_name.charAt(0) }}</div>
-            <div class="eval-info">
-              <div class="eval-name">{{ r.target_name }}</div>
-              <div class="eval-meta">{{ r.target_department }} · {{ r.target_position }}</div>
-            </div>
-            <div class="eval-status">
-              <div class="status-tag" :class="statusClass(r)">{{ statusText(r.status) }}</div>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="arrow-icon">
-                <polyline points="9 18 15 12 9 6"/>
-              </svg>
-            </div>
-          </div>
-        </div>
+    <section class="task-hero">
+      <div>
+        <span>本批次进度</span>
+        <strong>{{ totalCompleted }}/{{ relations.length }}</strong>
       </div>
+      <div class="hero-progress">
+        <div :style="{ width: `${relations.length ? Math.round((totalCompleted / relations.length) * 100) : 0}%` }" />
+      </div>
+    </section>
 
-      <div v-if="Object.keys(grouped).length === 0 && !loading" class="empty">
-        <div class="empty-icon">
-          <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
-            <circle cx="28" cy="28" r="28" fill="#f5f7fa"/>
-            <path d="M20 28h16M28 20v16" stroke="#c0cdd9" stroke-width="2.5" stroke-linecap="round"/>
-          </svg>
+    <van-pull-refresh v-model="refreshing" @refresh="loadRelations" class="content">
+      <section v-for="type in visibleTypes" :key="type" class="task-section">
+        <div class="section-head">
+          <div>
+            <strong>{{ typeLabel[type] }}</strong>
+            <span>{{ typeHelp[type] }}</span>
+          </div>
+          <b>{{ completedCount(grouped[type]) }}/{{ grouped[type].length }}</b>
         </div>
-        <p class="empty-title">暂无可评价对象</p>
-        <p class="empty-desc">当前批次暂无评价任务</p>
+
+        <button v-if="type !== 'self'" class="task-card" @click="goBatch(type)">
+          <div class="task-icon" :class="type">{{ typeIcon[type] }}</div>
+          <div class="task-main">
+            <div class="task-title">{{ typeLabel[type] }}</div>
+            <div class="task-meta">需评价 {{ grouped[type].length }} 人，已完成 {{ completedCount(grouped[type]) }} 人</div>
+            <div class="mini-track"><div :style="{ width: progressPercent(grouped[type]) + '%' }" /></div>
+          </div>
+          <span class="state-pill" :class="groupStatusClass(grouped[type])">{{ groupStatusText(grouped[type]) }}</span>
+        </button>
+
+        <div v-else class="self-list">
+          <button v-for="r in grouped[type]" :key="r.id" class="self-row" @click="goForm(r)">
+            <div class="avatar" :class="statusClass(r)">{{ r.target_name.charAt(0) }}</div>
+            <div class="self-main">
+              <strong>{{ r.target_name }}</strong>
+              <span>{{ r.target_department }} · {{ r.target_position || '自我评价' }}</span>
+            </div>
+            <span class="state-pill" :class="statusClass(r)">{{ statusText(r.status) }}</span>
+          </button>
+        </div>
+      </section>
+
+      <div v-if="Object.keys(grouped).length === 0 && !loading" class="empty-card">
+        <h2>暂无可评价对象</h2>
+        <p>当前批次暂无分配给你的评价任务。</p>
       </div>
     </van-pull-refresh>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { closeToast, showLoadingToast } from 'vant'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { showLoadingToast, closeToast } from 'vant'
 import { h5Api } from '../api'
 
 const props = defineProps<{ batchId: string }>()
@@ -110,23 +65,26 @@ const refreshing = ref(false)
 const relations = ref<any[]>([])
 const batch = ref<any>(null)
 
-const typeLabel: Record<string, string> = {
-  self: '自我评价',
-  peer: '同层互评',
-  downward: '向下评价',
+const typeLabel: Record<string, string> = { self: '自我评价', peer: '同级互评', downward: '向下评价' }
+const typeHelp: Record<string, string> = {
+  self: '完成本人业绩与综合评分',
+  peer: '按人员逐一评价综合题目',
+  downward: '查看下属状态后逐人评分',
 }
+const typeIcon: Record<string, string> = { self: '自', peer: '互', downward: '下' }
+const visibleTypes = computed(() => ['self', 'peer', 'downward'].filter(type => grouped.value[type]?.length))
 
 const grouped = computed(() => {
   const g: Record<string, any[]> = {}
   for (const r of relations.value) {
-    const key = r.eval_type
-    if (!g[key]) g[key] = []
-    g[key].push(r)
+    if (!g[r.eval_type]) g[r.eval_type] = []
+    g[r.eval_type].push(r)
   }
   return g
 })
+const totalCompleted = computed(() => relations.value.filter(r => r.status === 'completed').length)
 
-function completedCount(items: any[]) {
+function completedCount(items: any[] = []) {
   return items.filter(r => r.status === 'completed').length
 }
 function statusClass(r: any) {
@@ -185,137 +143,94 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.evaluate-page {
-  min-height: 100dvh;
-  background: var(--hr-bg);
+.evaluate-page { min-height: 100dvh; background: var(--hr-bg); }
+.nav-bar { position: sticky; top: 0; z-index: 40; background: #fff; }
+
+.task-hero {
+  padding: 18px 16px 20px;
+  color: #fff;
+  background: linear-gradient(145deg, #0f3b5f, #0369a1);
+  box-shadow: var(--hr-shadow-soft);
 }
-.nav-bar {
-  background: #fff;
-  position: sticky;
-  top: 0;
-  z-index: 30;
-}
-.section { margin-top: 14px; padding: 0 16px; }
-.section-header {
+.task-hero span { display: block; color: rgba(255,255,255,.70); font-size: 12px; }
+.task-hero strong { display: block; margin-top: 5px; font-size: 34px; line-height: 1; font-weight: 900; }
+.hero-progress { margin-top: 14px; height: 8px; border-radius: 999px; background: rgba(255,255,255,.20); overflow: hidden; }
+.hero-progress div { height: 100%; border-radius: inherit; background: #67e8f9; }
+
+.content { padding: 16px 16px 96px; }
+.task-section { margin-bottom: 18px; }
+.section-head {
   display: flex;
-  align-items: center;
   justify-content: space-between;
-  padding: 14px 4px 10px;
+  align-items: flex-end;
+  margin: 0 2px 10px;
 }
-.section-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 16px;
-  font-weight: 900;
-  color: var(--hr-text);
-}
-.section-icon {
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  background: var(--hr-primary-soft);
-  color: var(--hr-accent-strong);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.section-count { font-size: 13px; }
-.count-done { color: var(--hr-accent-strong); font-weight: 900; }
-.count-sep { color: #d0d5dd; margin: 0 2px; }
-.count-total { color: var(--hr-muted); }
-.batch-entry {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  background: var(--hr-surface);
-  border: 1px solid rgba(226,232,240,.92);
-  border-radius: 10px;
-  padding: 17px;
-  box-shadow: var(--hr-shadow-soft);
-  cursor: pointer;
-  transition: transform .16s ease, box-shadow .16s ease;
-}
-.batch-entry:active { transform: scale(.985); box-shadow: 0 2px 10px rgba(15,23,42,.08); }
-.batch-entry-icon {
-  width: 46px;
-  height: 46px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-.batch-entry-icon.peer { color: var(--hr-accent-strong); background: var(--hr-primary-soft); }
-.batch-entry-icon.downward { color: #6b5b18; background: rgba(232,191,90,0.14); }
-.batch-entry-main { flex: 1; min-width: 0; }
-.batch-entry-title { font-size: 17px; font-weight: 900; color: var(--hr-text); margin-bottom: 5px; }
-.batch-entry-meta { font-size: 12px; color: var(--hr-muted); margin-bottom: 10px; }
-.batch-entry-side { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.batch-progress {
-  height: 5px;
-  background: var(--hr-primary-soft);
-  border-radius: 8px;
-  overflow: hidden;
-}
-.batch-progress-fill {
-  height: 100%;
-  background: linear-gradient(90deg, var(--hr-accent-strong), #38bdf8);
-  border-radius: 8px;
-  transition: width 0.2s ease;
-}
-.eval-list {
-  background: var(--hr-surface);
-  border: 1px solid rgba(226,232,240,.92);
-  border-radius: 10px;
-  overflow: hidden;
+.section-head strong { display: block; font-size: 17px; color: var(--hr-text); }
+.section-head span { display: block; margin-top: 3px; font-size: 12px; color: var(--hr-muted); }
+.section-head b { color: var(--hr-accent-strong); font-size: 16px; }
+
+.task-card,
+.self-row,
+.empty-card {
+  width: 100%;
+  border: 1px solid var(--hr-border);
+  border-radius: 14px;
+  background: #fff;
   box-shadow: var(--hr-shadow-soft);
 }
-.eval-item {
-  display: flex;
-  align-items: center;
+.task-card {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
   gap: 12px;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--hr-border);
-  cursor: pointer;
-  transition: background 0.15s;
-}
-.eval-item:last-child { border-bottom: none; }
-.eval-item:active { background: #f8fafc; }
-.eval-avatar {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  display: flex;
   align-items: center;
-  justify-content: center;
-  font-size: 18px;
+  padding: 15px;
+  text-align: left;
+}
+.task-icon,
+.avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 13px;
+  display: grid;
+  place-items: center;
   font-weight: 900;
-  flex-shrink: 0;
 }
-.eval-avatar.done { background: rgba(7,193,96,0.1); color: var(--hr-success); }
-.eval-avatar.draft { background: var(--hr-primary-soft); color: var(--hr-accent-strong); }
-.eval-avatar.pending { background: rgba(232,191,90,0.12); color: #b88a1e; }
-.eval-info { flex: 1; min-width: 0; }
-.eval-name { font-size: 16px; font-weight: 800; color: var(--hr-text); margin-bottom: 4px; }
-.eval-meta { font-size: 12px; color: var(--hr-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.eval-status { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.status-tag {
-  display: inline-flex;
+.task-icon.peer { color: var(--hr-accent-strong); background: #e0f2fe; }
+.task-icon.downward { color: #9a5b00; background: #fff4d8; }
+.task-title { color: var(--hr-text); font-size: 16px; font-weight: 900; }
+.task-meta { margin-top: 4px; color: var(--hr-muted); font-size: 12px; }
+.mini-track { margin-top: 9px; height: 6px; border-radius: 999px; background: #e2e8f0; overflow: hidden; }
+.mini-track div { height: 100%; background: linear-gradient(90deg, var(--hr-accent-strong), #38bdf8); }
+
+.self-list { display: grid; gap: 10px; }
+.self-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  gap: 12px;
   align-items: center;
-  gap: 4px;
+  padding: 14px;
+  text-align: left;
+}
+.avatar { width: 44px; height: 44px; color: var(--hr-accent-strong); background: #e0f2fe; }
+.avatar.done { color: var(--hr-success); background: #e8f8ef; }
+.avatar.draft { color: var(--hr-accent-strong); background: #e0f2fe; }
+.avatar.pending { color: #9a5b00; background: #fff4d8; }
+.self-main { min-width: 0; }
+.self-main strong { display: block; color: var(--hr-text); font-size: 16px; }
+.self-main span { display: block; margin-top: 3px; color: var(--hr-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.state-pill {
+  min-height: 26px;
+  padding: 5px 9px;
+  border-radius: 999px;
   font-size: 12px;
-  font-weight: 700;
-  padding: 4px 9px;
-  border-radius: 20px;
+  font-weight: 900;
   white-space: nowrap;
 }
-.status-tag.done { background: rgba(7,193,96,0.1); color: var(--hr-success); }
-.status-tag.draft { background: var(--hr-primary-soft); color: var(--hr-accent-strong); }
-.status-tag.pending { background: rgba(232,191,90,0.12); color: #b88a1e; }
-.arrow-icon { color: #c0cdd9; }
-.empty { text-align: center; padding: 60px 24px; }
-.empty-icon { margin-bottom: 12px; }
-.empty-title { font-size: 16px; font-weight: 800; color: var(--hr-text); margin: 0 0 6px; }
-.empty-desc { font-size: 13px; color: var(--hr-muted); margin: 0; }
+.state-pill.done { color: var(--hr-success); background: #e8f8ef; }
+.state-pill.draft { color: var(--hr-accent-strong); background: #e0f2fe; }
+.state-pill.pending { color: #9a5b00; background: #fff4d8; }
+.empty-card { padding: 42px 20px; text-align: center; }
+.empty-card h2 { margin: 0 0 6px; font-size: 17px; color: var(--hr-text); }
+.empty-card p { margin: 0; font-size: 13px; color: var(--hr-muted); }
 </style>
