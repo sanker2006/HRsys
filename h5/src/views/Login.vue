@@ -106,22 +106,41 @@ async function handleLogin() {
 
 <style scoped>
 .login-page {
+  position: relative;
   min-height: 100dvh;
   background:
-    radial-gradient(circle at 50% 8%, rgba(3,105,161,.14), transparent 34%),
-    var(--hr-bg);
+    radial-gradient(circle at 50% 8%, rgba(3,100,134,.18), transparent 34%),
+    linear-gradient(180deg, #dce8f1 0%, var(--hr-bg-deep) 100%);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: calc(env(safe-area-inset-top) + 24px) 24px calc(env(safe-area-inset-bottom) + 24px);
   box-sizing: border-box;
+  overflow: hidden;
+}
+
+.login-page::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 34%;
+  background:
+    linear-gradient(145deg, rgba(13, 51, 79, .98), rgba(3, 100, 134, .92)),
+    #0d334f;
+  border-radius: 0 0 34px 34px;
+  box-shadow: 0 18px 44px rgba(8, 31, 49, .20);
+}
+
+.login-page > * {
+  position: relative;
+  z-index: 1;
 }
 
 /* 顶部品牌 */
 .top-brand {
   text-align: center;
-  color: var(--hr-text);
+  color: #fff;
   margin-bottom: 32px;
 }
 .brand-icon {
@@ -130,13 +149,13 @@ async function handleLogin() {
 .brand-title {
   font-size: 28px;
   font-weight: 900;
-  color: var(--hr-primary);
+  color: #fff;
   margin: 0 0 6px;
   letter-spacing: 3px;
 }
 .brand-sub {
   font-size: 13px;
-  color: var(--hr-muted);
+  color: rgba(255,255,255,.74);
   margin: 0;
   letter-spacing: 1px;
 }
@@ -145,13 +164,13 @@ async function handleLogin() {
 .login-card {
   width: 100%;
   max-width: 340px;
-  background: rgba(255,255,255,.96);
-  border: 1px solid rgba(226,232,240,.92);
+  background: linear-gradient(180deg, rgba(245,249,252,.98), rgba(226,237,245,.98));
+  border: 1px solid rgba(174,191,208,.92);
   border-radius: 14px;
   padding: 28px 24px 24px;
   box-shadow:
-    0 18px 46px rgba(15, 23, 42, 0.12),
-    0 1px 4px rgba(15, 23, 42, 0.06);
+    0 18px 46px rgba(8, 31, 49, 0.16),
+    0 1px 4px rgba(8, 31, 49, 0.08);
 }
 
 .card-header {
@@ -180,7 +199,7 @@ async function handleLogin() {
   display: block;
 }
 .custom-field {
-  background: #f8fafc;
+  background: var(--hr-surface-strong);
   border-radius: 10px;
   border: 1px solid var(--hr-border);
   padding: 0 14px;
@@ -188,7 +207,7 @@ async function handleLogin() {
 }
 .custom-field:focus-within {
   border-color: var(--hr-accent);
-  background: #fff;
+  background: var(--hr-surface-raised);
   box-shadow: 0 0 0 3px rgba(3,105,161,.10);
 }
 .custom-field :deep(.van-field__control) {
@@ -211,7 +230,7 @@ async function handleLogin() {
   font-size: 16px;
   font-weight: 800;
   letter-spacing: 0;
-  background: linear-gradient(145deg, #0f3b5f 0%, #0369a1 100%) !important;
+  background: linear-gradient(145deg, #0d334f 0%, #036486 100%) !important;
   border: none !important;
   box-shadow: 0 10px 24px rgba(3, 105, 161, 0.24);
   transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;

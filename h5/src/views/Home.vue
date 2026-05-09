@@ -179,7 +179,9 @@ onMounted(async () => {
 <style scoped>
 .home-page {
   min-height: 100dvh;
-  background: var(--hr-bg);
+  background:
+    radial-gradient(circle at 100% 28%, rgba(3, 100, 134, .10), transparent 34%),
+    var(--hr-bg);
 }
 
 .work-hero {
@@ -242,6 +244,7 @@ onMounted(async () => {
 
 .content {
   padding: 16px 16px 96px;
+  background: var(--hr-bg);
 }
 
 .section-title {
@@ -258,10 +261,11 @@ onMounted(async () => {
   width: 100%;
   margin-bottom: 13px;
   padding: 16px;
-  border: 1px solid var(--hr-border);
+  border: 1px solid #aebfd0;
   border-radius: 14px;
-  background: #fff;
-  box-shadow: var(--hr-shadow-soft);
+  background: linear-gradient(180deg, var(--hr-surface-raised), var(--hr-surface));
+  border-color: var(--hr-border-strong);
+  box-shadow: 0 9px 22px rgba(8, 31, 49, .11);
   text-align: left;
 }
 
@@ -287,23 +291,23 @@ onMounted(async () => {
   font-weight: 900;
   white-space: nowrap;
 }
-.batch-card.active .state-pill { color: var(--hr-accent-strong); background: #e0f2fe; }
-.batch-card.done .state-pill { color: var(--hr-success); background: #e8f8ef; }
-.batch-card.pending .state-pill { color: #9a5b00; background: #fff4d8; }
+.batch-card.active .state-pill { color: var(--hr-accent-strong); background: #dbeafe; }
+.batch-card.done .state-pill { color: var(--hr-success); background: #d9f0e4; }
+.batch-card.pending .state-pill { color: #8a4d00; background: #f5e4bd; }
 
 .task-row {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
 }
-.task-row div { padding: 10px; border-radius: 10px; background: #f8fafc; }
+.task-row div { padding: 10px; border-radius: 10px; background: var(--hr-surface-strong); border: 1px solid rgba(201, 215, 229, .75); }
 .task-row span { display: block; color: var(--hr-muted); font-size: 11px; }
 .task-row b { display: block; margin-top: 5px; color: var(--hr-text); font-size: 18px; line-height: 1; font-weight: 900; }
 
 .progress-track {
   height: 7px;
   border-radius: 999px;
-  background: #e2e8f0;
+  background: #c9d7e5;
   overflow: hidden;
 }
 .progress-fill {

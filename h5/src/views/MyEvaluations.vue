@@ -108,7 +108,12 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.my-page { min-height: 100dvh; background: var(--hr-bg); }
+.my-page {
+  min-height: 100dvh;
+  background:
+    radial-gradient(circle at 100% 18%, rgba(3, 100, 134, .10), transparent 34%),
+    var(--hr-bg);
+}
 .work-hero {
   padding: calc(env(safe-area-inset-top) + 20px) 18px 22px;
   color: #fff;
@@ -132,10 +137,11 @@ onMounted(async () => {
 .eval-row,
 .empty-card {
   width: 100%;
-  border: 1px solid var(--hr-border);
+  border: 1px solid #aebfd0;
   border-radius: 14px;
-  background: #fff;
-  box-shadow: var(--hr-shadow-soft);
+  background: linear-gradient(180deg, var(--hr-surface-raised), var(--hr-surface));
+  border-color: var(--hr-border-strong);
+  box-shadow: 0 9px 22px rgba(8, 31, 49, .11);
 }
 .eval-row {
   display: grid;
@@ -153,17 +159,17 @@ onMounted(async () => {
   border-radius: 13px;
   font-weight: 900;
 }
-.avatar.done { color: var(--hr-success); background: #e8f8ef; }
-.avatar.draft { color: var(--hr-accent-strong); background: #e0f2fe; }
-.avatar.pending { color: #9a5b00; background: #fff4d8; }
+.avatar.done { color: var(--hr-success); background: #d9f0e4; }
+.avatar.draft { color: var(--hr-accent-strong); background: #dbeafe; }
+.avatar.pending { color: #8a4d00; background: #f5e4bd; }
 .eval-info { min-width: 0; }
 .eval-info strong { display: block; color: var(--hr-text); font-size: 16px; }
 .eval-info span { display: block; margin-top: 4px; color: var(--hr-muted); font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .eval-side { display: flex; align-items: center; gap: 8px; }
 .state-pill { min-height: 26px; padding: 5px 9px; border-radius: 999px; font-size: 12px; font-weight: 900; white-space: nowrap; }
-.state-pill.done { color: var(--hr-success); background: #e8f8ef; }
-.state-pill.draft { color: var(--hr-accent-strong); background: #e0f2fe; }
-.state-pill.pending { color: #9a5b00; background: #fff4d8; }
+.state-pill.done { color: var(--hr-success); background: #d9f0e4; }
+.state-pill.draft { color: var(--hr-accent-strong); background: #dbeafe; }
+.state-pill.pending { color: #8a4d00; background: #f5e4bd; }
 .empty-card { padding: 42px 20px; text-align: center; }
 .empty-card h2 { margin: 0 0 6px; font-size: 17px; color: var(--hr-text); }
 .empty-card p { margin: 0; font-size: 13px; color: var(--hr-muted); }

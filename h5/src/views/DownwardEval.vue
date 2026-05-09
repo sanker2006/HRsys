@@ -35,7 +35,7 @@
       </div>
     </section>
 
-    <van-notice-bar v-if="blockedReason && !isCompleted" color="#8a5a00" background="#fff7e0">
+    <van-notice-bar v-if="blockedReason && !isCompleted" color="#7c4a03" background="#f5e4bd">
       {{ blockedReason }}
     </van-notice-bar>
 
@@ -245,7 +245,9 @@ watch(() => props.relationId, loadPage)
 <style scoped>
 .page {
   min-height: 100dvh;
-  background: var(--hr-bg);
+  background:
+    radial-gradient(circle at 100% 12%, rgba(3, 100, 134, .10), transparent 34%),
+    var(--hr-bg);
   padding-top: 150px;
   padding-bottom: calc(108px + env(safe-area-inset-bottom, 0px));
 }
@@ -256,7 +258,7 @@ watch(() => props.relationId, loadPage)
   right: 0;
   z-index: 60;
   height: 46px;
-  background: #fff;
+  background: #f6f9fc;
 }
 .score-dock {
   position: fixed;
@@ -283,13 +285,13 @@ watch(() => props.relationId, loadPage)
   margin: 14px 16px;
   padding: 14px;
   border-radius: 14px;
-  background: var(--hr-surface);
-  border: 1px solid var(--hr-border);
+  background: linear-gradient(180deg, var(--hr-surface-raised), var(--hr-surface));
+  border: 1px solid var(--hr-border-strong);
   box-shadow: var(--hr-shadow-soft);
 }
 .quota-title { font-size: 14px; font-weight: 900; color: var(--hr-text); margin-bottom: 10px; }
 .quota-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.quota-grid div { border-radius: 12px; background: #f8fafc; padding: 10px; border: 1px solid rgba(226,232,240,.9); }
+.quota-grid div { border-radius: 12px; background: var(--hr-surface-strong); padding: 10px; border: 1px solid rgba(201,215,229,.9); }
 .quota-grid span, .quota-grid em { display: block; font-size: 11px; color: var(--hr-muted); font-style: normal; }
 .quota-grid b { display: block; margin: 4px 0 2px; font-size: 18px; color: var(--hr-text); font-variant-numeric: tabular-nums; }
 .person-line { display: flex; align-items: center; gap: 12px; }
@@ -309,18 +311,27 @@ watch(() => props.relationId, loadPage)
 .person-name { font-size: 18px; font-weight: 900; color: var(--hr-text); }
 .person-meta { margin-top: 5px; font-size: 13px; color: var(--hr-muted); }
 .status { font-size: 12px; padding: 4px 9px; border-radius: 999px; white-space: nowrap; font-weight: 800; }
-.status.completed { color: var(--hr-success); background: #e8f8ef; }
+.status.completed { color: var(--hr-success); background: #d9f0e4; }
 .status.draft { color: var(--hr-accent-strong); background: var(--hr-primary-soft); }
-.status.pending { color: #8a5a00; background: #fff7e0; }
+.status.pending { color: #8a4d00; background: #f5e4bd; }
 .question-group { margin: 16px; }
 .group-title { margin: 18px 2px 10px; font-size: 17px; color: var(--hr-text); font-weight: 900; }
 .question-card {
+  position: relative;
   margin-bottom: 12px;
   padding: 18px;
   border-radius: 14px;
-  background: var(--hr-surface);
-  border: 1px solid rgba(226,232,240,.95);
-  box-shadow: var(--hr-shadow-soft);
+  background: var(--hr-surface-raised);
+  border: 1px solid #aebfd0;
+  box-shadow: 0 9px 22px rgba(8, 31, 49, .12);
+  overflow: hidden;
+}
+.question-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: linear-gradient(180deg, #036486, #67e8f9);
 }
 .card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
 .question-text { flex: 1; min-width: 0; font-size: 16px; line-height: 1.58; color: var(--hr-text); font-weight: 700; }
@@ -336,8 +347,8 @@ watch(() => props.relationId, loadPage)
   font-variant-numeric: tabular-nums;
 }
 .meta-line { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; }
-.meta-line span { padding: 6px 10px; border-radius: 999px; background: #f1f5f9; color: var(--hr-muted); font-size: 12px; font-weight: 700; }
-.completed { margin: 16px; padding: 13px; border-radius: 12px; text-align: center; color: var(--hr-success); background: #e8f8ef; font-weight: 900; border: 1px solid #bbf7d0; }
+.meta-line span { padding: 6px 10px; border-radius: 999px; background: var(--hr-surface-strong); color: var(--hr-muted); font-size: 12px; font-weight: 700; border: 1px solid rgba(201, 215, 229, .70); }
+.completed { margin: 16px; padding: 13px; border-radius: 12px; text-align: center; color: var(--hr-success); background: #d9f0e4; font-weight: 900; border: 1px solid #a7dfbf; }
 .actions {
   position: fixed;
   left: 0;
@@ -347,13 +358,13 @@ watch(() => props.relationId, loadPage)
   display: flex;
   gap: 10px;
   padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px));
-  background: rgba(255,255,255,.98);
+  background: rgba(237,244,249,.96);
   backdrop-filter: blur(12px);
   border-top: 1px solid var(--hr-border);
   box-shadow: 0 -8px 24px rgba(15,23,42,.10);
 }
 .btn { flex: 1; height: 52px; border-radius: 12px; font-size: 15px; font-weight: 900; }
-.secondary { color: var(--hr-accent-strong) !important; border: 1px solid #7dd3fc !important; background: #e0f2fe !important; }
-.ghost { color: var(--hr-text) !important; border: 1px solid #cbd5e1 !important; background: #f8fafc !important; }
-.primary { color: #fff !important; background: #0369a1 !important; border: 1px solid #0369a1 !important; box-shadow: 0 10px 22px rgba(3,105,161,.28); }
+.secondary { color: var(--hr-accent-strong) !important; border: 1px solid #8eb9d4 !important; background: #dbeafe !important; }
+.ghost { color: var(--hr-text) !important; border: 1px solid #b8c9da !important; background: var(--hr-surface-strong) !important; }
+.primary { color: #fff !important; background: #036486 !important; border: 1px solid #036486 !important; box-shadow: 0 10px 22px rgba(3,100,134,.30); }
 </style>

@@ -3,34 +3,37 @@
 }
 
 :root {
-  --hr-primary: #0f172a;
-  --hr-primary-soft: #e7edf5;
-  --hr-accent: #0369a1;
-  --hr-accent-strong: #075985;
+  --hr-primary: #0d2338;
+  --hr-primary-soft: #dbe8f2;
+  --hr-accent: #036486;
+  --hr-accent-strong: #064f68;
   --hr-success: #0f8a5f;
   --hr-warning: #b7791f;
   --hr-danger: #dc2626;
-  --hr-bg: #f6f8fb;
-  --hr-surface: #ffffff;
-  --hr-surface-strong: #f8fafc;
-  --hr-border: #e2e8f0;
-  --hr-text: #0f172a;
-  --hr-muted: #64748b;
-  --hr-faint: #94a3b8;
+  --hr-bg: #c7d6e3;
+  --hr-bg-deep: #b9cad8;
+  --hr-surface: #eaf2f8;
+  --hr-surface-strong: #dce8f2;
+  --hr-surface-raised: #f3f8fb;
+  --hr-border: #c9d7e5;
+  --hr-border-strong: #aebfd0;
+  --hr-text: #102033;
+  --hr-muted: #51657a;
+  --hr-faint: #7d90a4;
   --hr-radius: 10px;
-  --hr-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
-  --hr-shadow-soft: 0 4px 16px rgba(15, 23, 42, 0.06);
+  --hr-shadow: 0 14px 34px rgba(8, 31, 49, 0.13);
+  --hr-shadow-soft: 0 7px 20px rgba(8, 31, 49, 0.09);
 
   --van-primary-color: var(--hr-accent);
   --van-primary-disabled-color: #9ec9e3;
   --van-button-primary-background: var(--hr-accent);
   --van-button-primary-border-color: var(--hr-accent);
   --van-tabs-default-color: var(--hr-accent);
-  --van-nav-bar-background: var(--hr-surface);
+  --van-nav-bar-background: #f6f9fc;
   --van-nav-bar-title-text-color: var(--hr-text);
   --van-nav-bar-icon-color: var(--hr-text);
   --van-slider-active-background: var(--hr-accent);
-  --van-slider-inactive-background: #dbe5ef;
+  --van-slider-inactive-background: #c9d7e5;
   --van-slider-button-width: 22px;
   --van-slider-button-height: 22px;
   --van-radius-md: 10px;
@@ -47,8 +50,8 @@ body {
   font-family: "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   background:
-    radial-gradient(circle at 8% 0%, rgba(3, 105, 161, 0.10), transparent 28%),
-    linear-gradient(180deg, #f8fafc 0%, #eef3f8 100%);
+    radial-gradient(circle at 8% 0%, rgba(3, 100, 134, 0.16), transparent 30%),
+    linear-gradient(180deg, #e5edf5 0%, var(--hr-bg) 44%, var(--hr-bg-deep) 100%);
   color: var(--hr-text);
   max-width: 100%;
   overflow-x: hidden;
@@ -62,14 +65,21 @@ a,
   touch-action: manipulation;
 }
 
+button {
+  appearance: none;
+  -webkit-appearance: none;
+  font: inherit;
+}
+
 .van-nav-bar {
-  border-bottom: 1px solid rgba(226, 232, 240, 0.82);
-  background: #ffffff !important;
+  border-bottom: 1px solid rgba(174, 191, 208, 0.92);
+  background: #f6f9fc !important;
   color: var(--hr-text);
+  box-shadow: 0 2px 12px rgba(8, 31, 49, 0.06);
 }
 
 .van-nav-bar__content {
-  background: #ffffff;
+  background: #f6f9fc;
 }
 
 .van-nav-bar__title {
@@ -86,12 +96,12 @@ a,
 }
 
 .van-button--primary {
-  box-shadow: 0 8px 20px rgba(3, 105, 161, 0.18);
+  box-shadow: 0 10px 22px rgba(3, 100, 134, 0.22);
 }
 
 .van-slider__button {
-  border: 3px solid #ffffff;
-  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.20);
+  border: 3px solid #f7fafc;
+  box-shadow: 0 4px 12px rgba(8, 31, 49, 0.24);
 }
 
 .safe-bottom {

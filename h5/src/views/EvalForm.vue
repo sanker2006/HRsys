@@ -2,7 +2,7 @@
   <div class="page">
     <van-nav-bar :title="targetName" left-arrow @click-left="router.back()" class="nav" />
 
-    <van-notice-bar v-if="blockedReason && !isCompleted" color="#8a5a00" background="#fff7e0">
+    <van-notice-bar v-if="blockedReason && !isCompleted" color="#7c4a03" background="#f5e4bd">
       {{ blockedReason }}
     </van-notice-bar>
 
@@ -182,7 +182,9 @@ onMounted(async () => {
 <style scoped>
 .page {
   min-height: 100dvh;
-  background: var(--hr-bg);
+  background:
+    radial-gradient(circle at 100% 12%, rgba(3, 100, 134, .10), transparent 34%),
+    var(--hr-bg);
   padding-top: 150px;
   padding-bottom: calc(104px + env(safe-area-inset-bottom, 0px));
 }
@@ -193,7 +195,7 @@ onMounted(async () => {
   right: 0;
   z-index: 60;
   height: 46px;
-  background: #fff;
+  background: #f6f9fc;
 }
 .score-dock {
   position: fixed;
@@ -218,12 +220,21 @@ onMounted(async () => {
 .question-group { margin: 16px; }
 .group-title { margin: 18px 2px 10px; font-size: 17px; color: var(--hr-text); font-weight: 900; }
 .question-card {
+  position: relative;
   margin-bottom: 12px;
   padding: 18px;
   border-radius: 14px;
-  background: var(--hr-surface);
-  border: 1px solid rgba(226,232,240,.95);
-  box-shadow: var(--hr-shadow-soft);
+  background: var(--hr-surface-raised);
+  border: 1px solid #aebfd0;
+  box-shadow: 0 9px 22px rgba(8, 31, 49, .12);
+  overflow: hidden;
+}
+.question-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: linear-gradient(180deg, #036486, #67e8f9);
 }
 .total-card { margin: 16px; }
 .card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
@@ -241,8 +252,8 @@ onMounted(async () => {
   font-variant-numeric: tabular-nums;
 }
 .meta-line { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; }
-.meta-line span { padding: 6px 10px; border-radius: 999px; background: #f1f5f9; color: var(--hr-muted); font-size: 12px; font-weight: 700; }
-.completed { margin: 16px; padding: 13px; border-radius: 12px; text-align: center; color: var(--hr-success); background: #e8f8ef; font-weight: 900; border: 1px solid #bbf7d0; }
+.meta-line span { padding: 6px 10px; border-radius: 999px; background: var(--hr-surface-strong); color: var(--hr-muted); font-size: 12px; font-weight: 700; border: 1px solid rgba(201, 215, 229, .70); }
+.completed { margin: 16px; padding: 13px; border-radius: 12px; text-align: center; color: var(--hr-success); background: #d9f0e4; font-weight: 900; border: 1px solid #a7dfbf; }
 .actions {
   position: fixed;
   left: 0;
@@ -252,12 +263,12 @@ onMounted(async () => {
   display: flex;
   gap: 12px;
   padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px));
-  background: rgba(255,255,255,.98);
+  background: rgba(237,244,249,.96);
   backdrop-filter: blur(12px);
   border-top: 1px solid var(--hr-border);
   box-shadow: 0 -8px 24px rgba(15,23,42,.10);
 }
 .btn { flex: 1; height: 52px; border-radius: 12px; font-size: 15px; font-weight: 900; }
-.secondary { color: var(--hr-accent-strong) !important; border: 1px solid #7dd3fc !important; background: #e0f2fe !important; }
-.primary { color: #fff !important; background: #0369a1 !important; border: 1px solid #0369a1 !important; box-shadow: 0 10px 22px rgba(3,105,161,.28); }
+.secondary { color: var(--hr-accent-strong) !important; border: 1px solid #8eb9d4 !important; background: #dbeafe !important; }
+.primary { color: #fff !important; background: #036486 !important; border: 1px solid #036486 !important; box-shadow: 0 10px 22px rgba(3,100,134,.30); }
 </style>

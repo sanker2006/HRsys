@@ -151,10 +151,12 @@ onMounted(async () => {
 <style scoped>
 .page {
   min-height: 100dvh;
-  background: var(--hr-bg);
+  background:
+    radial-gradient(circle at 100% 18%, rgba(3, 100, 134, .10), transparent 34%),
+    var(--hr-bg);
   padding-bottom: 28px;
 }
-.nav { position: sticky; top: 0; z-index: 40; background: #fff; }
+.nav { position: sticky; top: 0; z-index: 40; background: #f6f9fc; }
 .summary {
   position: sticky;
   top: 46px;
@@ -176,31 +178,31 @@ onMounted(async () => {
   margin: 14px 16px;
   padding: 14px;
   border-radius: 14px;
-  background: var(--hr-surface);
-  border: 1px solid var(--hr-border);
+  background: linear-gradient(180deg, var(--hr-surface-raised), var(--hr-surface));
+  border: 1px solid #aebfd0;
   box-shadow: var(--hr-shadow-soft);
 }
 .quota-title { font-size: 14px; font-weight: 900; color: var(--hr-text); margin-bottom: 10px; }
 .quota-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.quota-grid div { border-radius: 10px; background: #f8fafc; padding: 10px; }
+.quota-grid div { border-radius: 10px; background: var(--hr-surface-strong); padding: 10px; border: 1px solid rgba(201, 215, 229, .75); }
 .quota-grid span, .quota-grid em { display: block; font-size: 11px; color: var(--hr-muted); font-style: normal; }
 .quota-grid b { display: block; margin: 4px 0 2px; font-size: 18px; color: var(--hr-text); font-variant-numeric: tabular-nums; }
 .person-list { margin: 14px 16px; display: grid; gap: 12px; }
 .person-row {
   width: 100%;
-  border: 1px solid rgba(226,232,240,.95);
+  border: 1px solid var(--hr-border-strong);
   border-radius: 14px;
-  background: var(--hr-surface);
+  background: linear-gradient(180deg, var(--hr-surface-raised), var(--hr-surface));
   padding: 15px;
   display: grid;
   grid-template-columns: 46px 1fr 18px;
   align-items: center;
   gap: 12px;
   text-align: left;
-  box-shadow: var(--hr-shadow-soft);
+  box-shadow: 0 9px 22px rgba(8, 31, 49, .11);
 }
 .person-row:active { transform: scale(.986); }
-.person-row.blocked { opacity: .72; background: #f8fafc; }
+.person-row.blocked { opacity: .72; background: var(--hr-surface-strong); }
 .avatar {
   width: 46px;
   height: 46px;
@@ -219,9 +221,9 @@ onMounted(async () => {
 .person-meta { margin-top: 4px; font-size: 12px; color: var(--hr-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .score-line { margin-top: 7px; display: flex; gap: 10px; color: var(--hr-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .status { flex: 0 0 auto; font-size: 12px; padding: 5px 9px; border-radius: 999px; font-weight: 900; }
-.status.completed { color: var(--hr-success); background: #e8f8ef; }
+.status.completed { color: var(--hr-success); background: #d9f0e4; }
 .status.draft { color: var(--hr-accent-strong); background: var(--hr-primary-soft); }
-.status.pending { color: #8a5a00; background: #fff7e0; }
-.status.blocked { color: #9a3412; background: #ffedd5; }
+.status.pending { color: #8a4d00; background: #f5e4bd; }
+.status.blocked { color: #9a3412; background: #f0d8c7; }
 .chevron { color: var(--hr-faint); }
 </style>
