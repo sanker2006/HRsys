@@ -65,6 +65,7 @@ export async function initDb(): Promise<void> {
   addColumnIfMissing('self_question', 'comp_weight_3', 'REAL');
   addColumnIfMissing('self_question', 'comp_weight_4', 'REAL');
   addColumnIfMissing('self_question', 'comp_weight_5', 'REAL');
+  addColumnIfMissing('app_user', 'status', "TEXT NOT NULL DEFAULT 'active'");
 
   db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_user_phone_idcard ON app_user(phone, id_card_tail)');
 

@@ -29,6 +29,10 @@ function normalizeImportedRole(value: any): string {
   return map[text] || text || 'staff';
 }
 
+function normalizeImportedStatus(value: any): 'active' | 'inactive' {
+  return UserModel.normalizeStatus(value);
+}
+
 function validateDepartmentExists(name: string): string | null {
   if (!name || !DepartmentModel.findByName(name)) return `部门「${name || '空'}」不存在，请先在部门管理中创建`;
   return null;
@@ -43,13 +47,14 @@ function validateManagedDepartments(departments: string[]): string | null {
 }
 
 router.get('/', async (ctx: Context) => {
-  const { department, level, keyword, page = '1', pageSize = '20' } = ctx.query as any;
+  const { department, level, keyword, status, page = '1', pageSize = '20' } = ctx.query as any;
   const p = Math.max(1, parseInt(page));
   const ps = Math.min(100, Math.max(1, parseInt(pageSize)));
   const filters: any = {};
   if (department) filters.department = department;
   if (level) filters.level = level;
   if (keyword) filters.keyword = keyword;
+  if (status) filters.status = status;
 
   const { list, total } = UserModel.findPage(filters, p, ps);
   success(ctx, { list: list.map(UserModel.toPublic), total, page: p, pageSize: ps });
@@ -57,7 +62,7 @@ router.get('/', async (ctx: Context) => {
 
 router.post('/', async (ctx: Context) => {
   try {
-    const { name, employee_no, department, position, level, phone, id_card_tail, is_admin, managed_departments } = ctx.request.body as any;
+    const { name, employee_no, department, position, level, phone, id_card_tail, status, is_admin, managed_departments } = ctx.request.body as any;
     if (!name || !employee_no || !department || !level || !id_card_tail) return fail(ctx, '缺少必填字段');
     const deptError = validateDepartmentExists(department);
     if (deptError) return fail(ctx, deptError);
@@ -75,6 +80,7 @@ router.post('/', async (ctx: Context) => {
       phone: phone || '',
       id_card_tail,
       password: hash(id_card_tail),
+      status: status || 'active',
       is_admin: is_admin || 0,
       managed_departments: managed,
     });
@@ -139,6 +145,7 @@ router.post('/import', async (ctx: Context) => {
       phone: String(u['手机号'] || u.phone || ''),
       id_card_tail: idTail,
       password: hash(idTail || '0000'),
+      status: normalizeImportedStatus(u['状态'] || u.status),
       managed_departments: parseManagedDepartments(u['负责部门'] || u.managed_departments),
     };
     const deptError = validateDepartmentExists(item.department);
@@ -154,10 +161,11 @@ router.post('/import', async (ctx: Context) => {
 });
 
 router.get('/export', async (ctx: Context) => {
-  const { department, level } = ctx.query as any;
+  const { department, level, status } = ctx.query as any;
   const filters: any = {};
   if (department) filters.department = department;
   if (level) filters.level = level;
+  if (status) filters.status = status;
   const users = UserModel.findAll(filters).map(UserModel.toPublic);
   success(ctx, users);
 });

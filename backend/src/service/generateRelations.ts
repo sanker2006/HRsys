@@ -2,12 +2,21 @@ import { UserModel } from '../model/user.js';
 import { RelationModel } from '../model/relation.js';
 import { EvalMatrixModel } from '../model/eval_matrix.js';
 import { BatchModel } from '../model/batch.js';
+import { SelfQuestionModel } from '../model/self_question.js';
 
 export interface GenResult {
   total: number;
   self: number;
   peer: number;
   downward: number;
+}
+
+export interface MissingQuestionUser {
+  user_id: number;
+  name: string;
+  employee_no: string;
+  department: string;
+  level: string;
 }
 
 type RelationInput = {
@@ -40,7 +49,7 @@ export function generateRelations(batchId: number): GenResult {
   const batch = BatchModel.findById(batchId);
   const peerCrossDept = batch?.peer_cross_dept === 1;
 
-  const users = UserModel.findAll().filter(u => !u.is_admin);
+  const users = UserModel.findAll({ status: 'active' }).filter(u => !u.is_admin);
   const mainLeaders = users.filter(u => u.level === 'main_leader');
   const divisionLeaders = users.filter(u => u.level === 'division_leader');
   const managers = users.filter(u => u.level === 'manager');
@@ -117,4 +126,27 @@ export function generateRelations(batchId: number): GenResult {
     peer: created.filter(r => r.eval_type === 'peer').length,
     downward: created.filter(r => r.eval_type === 'downward').length,
   };
+}
+
+export function findMissingQuestionUsers(batchId: number): MissingQuestionUser[] {
+  const questionRows = SelfQuestionModel.toExportFormat(SelfQuestionModel.findByBatchId(batchId));
+  const byUser = new Map(questionRows.map(row => [row.user_id, row]));
+  const users = UserModel.findAll({ status: 'active' })
+    .filter(u => !u.is_admin && ['manager', 'staff'].includes(u.level));
+
+  return users
+    .filter(user => {
+      const row = byUser.get(user.id);
+      if (!row || row.performance_questions.length === 0 || row.comprehensive_questions.length === 0) return true;
+      const performanceTotal = row.performance_questions.reduce((sum, q) => sum + Number(q.weight || 0), 0);
+      const comprehensiveTotal = row.comprehensive_questions.reduce((sum, q) => sum + Number(q.weight || 0), 0);
+      return Math.abs(performanceTotal - 70) > 0.001 || Math.abs(comprehensiveTotal - 30) > 0.001;
+    })
+    .map(user => ({
+      user_id: user.id,
+      name: user.name,
+      employee_no: user.employee_no,
+      department: user.department,
+      level: user.level,
+    }));
 }

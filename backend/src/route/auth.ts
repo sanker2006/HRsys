@@ -39,6 +39,7 @@ router.post('/h5-login', async (ctx: Context) => {
 
   const user = UserModel.findByPhoneAndIdCard(body.phone, body.idCardTail);
   if (!user) return fail(ctx, '手机号或身份证后四位错误');
+  if (user.status !== 'active') return fail(ctx, '账号已停用，请联系管理员', -1, 403);
 
   const token = sign({ userId: user.id, isAdmin: user.is_admin });
   success(ctx, { token, user: UserModel.toPublic(user) }, '登录成功');

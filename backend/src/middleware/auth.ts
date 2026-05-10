@@ -1,6 +1,7 @@
 import type { Middleware } from 'koa';
 import { verify } from '../utils/jwt.js';
 import { fail } from '../utils/response.js';
+import { UserModel } from '../model/user.js';
 
 export const auth: Middleware = async (ctx, next) => {
   const authHeader = ctx.headers.authorization;
@@ -16,5 +17,9 @@ export const auth: Middleware = async (ctx, next) => {
 
   ctx.state.userId = (payload as any).userId;
   ctx.state.isAdmin = (payload as any).isAdmin === 1;
+  if (!ctx.state.isAdmin) {
+    const user = UserModel.findById(ctx.state.userId);
+    if (!user || user.status !== 'active') return fail(ctx, '账号已停用，请联系管理员', -1, 403);
+  }
   await next();
 };

@@ -15,6 +15,14 @@
 
     <section class="metric-grid user-metrics">
       <div class="metric-card">
+        <div class="metric-label">启用人员</div>
+        <div class="metric-value success">{{ statusCount.active }}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">停用人员</div>
+        <div class="metric-value warning">{{ statusCount.inactive }}</div>
+      </div>
+      <div class="metric-card">
         <div class="metric-label">人员总数</div>
         <div class="metric-value">{{ users.length }}</div>
       </div>
@@ -50,6 +58,9 @@
         <el-select v-model="filterLevel" placeholder="角色" clearable @change="loadUsers">
           <el-option v-for="item in roleOptions" :key="item.value" :label="item.label" :value="item.value" />
         </el-select>
+        <el-select v-model="filterStatus" placeholder="状态" clearable @change="loadUsers">
+          <el-option v-for="item in statusOptions" :key="item.value" :label="item.label" :value="item.value" />
+        </el-select>
       </div>
 
       <el-table :data="paginatedList" class="admin-table" v-loading="loading">
@@ -61,6 +72,11 @@
         <el-table-column prop="level" label="角色" width="120">
           <template #default="{ row }">
             <el-tag size="small" :type="levelTag[row.level]">{{ levelText[row.level] || row.level }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="status" label="状态" width="100">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.status === 'active' ? 'success' : 'info'">{{ statusText[row.status] || row.status }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="负责部门" min-width="160">
@@ -107,6 +123,11 @@
             <el-option v-for="item in roleOptions" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
         </el-form-item>
+        <el-form-item label="状态" required>
+          <el-select v-model="form.status" style="width:100%">
+            <el-option v-for="item in statusOptions" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+        </el-form-item>
         <el-form-item v-if="form.level === 'division_leader'" label="负责部门" required>
           <el-select v-model="form.managed_departments" multiple filterable style="width:100%">
             <el-option v-for="d in departments" :key="d" :label="d" :value="d" />
@@ -137,6 +158,7 @@ const editingId = ref<number | null>(null)
 const keyword = ref('')
 const filterDept = ref('')
 const filterLevel = ref('')
+const filterStatus = ref('')
 const currentPage = ref(1)
 const pageSize = ref(20)
 
@@ -148,6 +170,11 @@ const roleOptions = [
 ]
 const levelTag: Record<string, string> = { main_leader: 'danger', division_leader: 'warning', manager: 'success', staff: 'info' }
 const levelText: Record<string, string> = { main_leader: '主要领导', division_leader: '分管领导', manager: '部门负责人', staff: '员工', admin: '管理员' }
+const statusOptions = [
+  { label: '启用', value: 'active' },
+  { label: '停用', value: 'inactive' },
+]
+const statusText: Record<string, string> = { active: '启用', inactive: '停用' }
 
 const form = reactive({
   name: '',
@@ -155,6 +182,7 @@ const form = reactive({
   department: '',
   position: '',
   level: 'staff',
+  status: 'active',
   phone: '',
   id_card_tail: '',
   managed_departments: [] as string[],
@@ -167,9 +195,13 @@ const roleCount = computed(() => ({
   manager: users.value.filter(u => u.level === 'manager').length,
   leader: users.value.filter(u => ['main_leader', 'division_leader'].includes(u.level)).length,
 }))
+const statusCount = computed(() => ({
+  active: users.value.filter(u => (u.status || 'active') === 'active').length,
+  inactive: users.value.filter(u => u.status === 'inactive').length,
+}))
 
 function resetForm() {
-  Object.assign(form, { name: '', employee_no: '', department: '', position: '', level: 'staff', phone: '', id_card_tail: '', managed_departments: [] })
+  Object.assign(form, { name: '', employee_no: '', department: '', position: '', level: 'staff', status: 'active', phone: '', id_card_tail: '', managed_departments: [] })
   editingId.value = null
 }
 
@@ -182,6 +214,7 @@ function openDialog(row?: any) {
       department: row.department,
       position: row.position,
       level: row.level,
+      status: row.status || 'active',
       phone: row.phone,
       id_card_tail: row.id_card_tail,
       managed_departments: [...(row.managed_departments || [])],
@@ -195,7 +228,7 @@ function openDialog(row?: any) {
 async function loadUsers() {
   loading.value = true
   try {
-    const res: any = await userApi.list({ keyword: keyword.value, department: filterDept.value, level: filterLevel.value })
+    const res: any = await userApi.list({ keyword: keyword.value, department: filterDept.value, level: filterLevel.value, status: filterStatus.value })
     users.value = res.data?.list || []
   } finally {
     loading.value = false
@@ -262,9 +295,11 @@ onMounted(async () => {
 
 <style scoped>
 .user-metrics .metric-value { font-size: 28px; }
+.metric-value.success { color: var(--admin-success); }
+.metric-value.warning { color: var(--admin-warning); }
 .filters {
   display: grid;
-  grid-template-columns: 260px 180px 180px;
+  grid-template-columns: 260px 180px 180px 160px;
   gap: 10px;
   margin-bottom: 14px;
 }

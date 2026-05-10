@@ -187,6 +187,18 @@ async function main() {
     await ok('/department/', { method: 'POST', token: adminToken, body: { name, sort_order } });
   }
   for (const item of users) await ok('/user/', { method: 'POST', token: adminToken, body: item });
+  const inactiveStaff = await ok('/user/', {
+    method: 'POST',
+    token: adminToken,
+    body: user('inactive-staff', 'S999', '研发部', 'staff', '13800000019', '0019', { status: 'inactive' }),
+  });
+  assert.equal(inactiveStaff.status, 'inactive');
+  const inactivePage = await ok('/user/?status=inactive&pageSize=100', { token: adminToken });
+  assert.equal(inactivePage.list.some(u => u.employee_no === 'S999'), true);
+  await fail('/auth/h5-login', {
+    method: 'POST',
+    body: { phone: '13800000019', idCardTail: '0019' },
+  }, /停用/);
   await fail('/user/', {
     method: 'POST',
     token: adminToken,
@@ -223,6 +235,12 @@ async function main() {
   assert.equal(wrongTotalImport.success, 0);
   assert.equal(wrongTotalImport.failed, 1);
   assert.match(wrongTotalImport.errors[0].message, /业绩评价分值合计/);
+
+  const missingQuestionGenerate = await fail(`/relation/generate/${batch.id}`, { method: 'POST', token: adminToken }, /未录入题目/);
+  assert(missingQuestionGenerate.data.missing_questions.length >= 6);
+  assert.equal(missingQuestionGenerate.data.missing_questions.some(u => u.employee_no === 'S999'), false);
+  const emptyRelationPage = await ok(`/relation/?batch_id=${batch.id}&pageSize=500`, { token: adminToken });
+  assert.equal(emptyRelationPage.total, 0);
 
   const importRows = users
     .filter(u => ['manager', 'staff'].includes(u.level))

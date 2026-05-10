@@ -24,7 +24,10 @@ api.interceptors.response.use(
     if (payload && typeof payload.code === 'number' && payload.code !== 0) {
       const msg = payload.message || '操作失败'
       ElMessage.error(msg)
-      return Promise.reject(new Error(msg))
+      const error: any = new Error(msg)
+      error.data = payload.data
+      error.payload = payload
+      return Promise.reject(error)
     }
     return payload
   },

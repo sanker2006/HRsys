@@ -127,7 +127,7 @@ function getTargetUsers(): StatUser[] {
             COALESCE(d.id, 999999) as department_id
      FROM app_user u
      LEFT JOIN department d ON d.name = u.department
-     WHERE u.is_admin = 0 AND u.level IN ('manager', 'staff')
+     WHERE u.is_admin = 0 AND u.status = 'active' AND u.level IN ('manager', 'staff')
      ORDER BY COALESCE(d.sort_order, 999999), COALESCE(d.id, 999999), u.employee_no ASC`,
     []
   );
@@ -333,4 +333,3 @@ export function buildStatistics(batchId: number): StatisticsResult | null {
     rows,
   };
 }
-

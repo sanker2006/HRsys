@@ -2,7 +2,7 @@ import Router from '@koa/router';
 import { RelationModel } from '../model/relation.js';
 import { BatchModel } from '../model/batch.js';
 import { UserModel } from '../model/user.js';
-import { generateRelations } from '../service/generateRelations.js';
+import { findMissingQuestionUsers, generateRelations } from '../service/generateRelations.js';
 import { success, fail } from '../utils/response.js';
 import { auth } from '../middleware/auth.js';
 import { admin } from '../middleware/admin.js';
@@ -45,6 +45,10 @@ router.post('/generate/:batchId', admin, async (ctx: Context) => {
   const batchId = parseInt(ctx.params.batchId);
   const batch = BatchModel.findById(batchId);
   if (!batch) return fail(ctx, '批次不存在', -1, 404);
+  const missingQuestions = findMissingQuestionUsers(batchId);
+  if (missingQuestions.length > 0) {
+    return fail(ctx, '存在未录入题目的人员，无法生成评价关系', -1, 200, { missing_questions: missingQuestions });
+  }
   const result = generateRelations(batchId);
   success(ctx, result, `生成完成，共 ${result.total} 条关系`);
 });

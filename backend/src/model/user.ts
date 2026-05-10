@@ -13,6 +13,7 @@ export interface UserRow {
   phone: string;
   id_card_tail: string;
   password: string;
+  status: 'active' | 'inactive';
   is_admin: number;
   created_at: string;
   updated_at: string;
@@ -28,6 +29,7 @@ export interface UserPublic {
   level: UserLevel;
   phone: string;
   id_card_tail: string;
+  status: 'active' | 'inactive';
   is_admin: number;
   created_at: string;
   managed_departments?: string[];
@@ -42,6 +44,12 @@ function normalizeLevel(level: string): UserLevel {
   if (level === 'leader') return 'division_leader';
   if (['main_leader', 'division_leader', 'manager', 'staff', 'admin'].includes(level)) return level as UserLevel;
   return 'staff';
+}
+
+function normalizeStatus(status: unknown): 'active' | 'inactive' {
+  const text = String(status || '').trim();
+  if (text === 'inactive' || text === '停用') return 'inactive';
+  return 'active';
 }
 
 function getManagedDepartments(userId: number): string[] {
@@ -103,17 +111,18 @@ export const UserModel = {
     ));
   },
 
-  findAll(filters?: { department?: string; level?: string; keyword?: string }): UserRow[] {
+  findAll(filters?: { department?: string; level?: string; keyword?: string; status?: string }): UserRow[] {
     let sql = 'SELECT * FROM app_user WHERE 1=1';
     const params: any[] = [];
     if (filters?.department) { sql += ' AND department = ?'; params.push(filters.department); }
     if (filters?.level) { sql += ' AND level = ?'; params.push(filters.level); }
+    if (filters?.status) { sql += ' AND status = ?'; params.push(normalizeStatus(filters.status)); }
     if (filters?.keyword) { sql += ' AND (name LIKE ? OR employee_no LIKE ?)'; params.push(`%${filters.keyword}%`, `%${filters.keyword}%`); }
     sql += ' ORDER BY created_at DESC';
     return queryAll<UserRow>(sql, params).map(u => attachManagedDepartments(u)!);
   },
 
-  findPage(filters: { department?: string; level?: string; keyword?: string } = {}, page = 1, pageSize = 20): {
+  findPage(filters: { department?: string; level?: string; keyword?: string; status?: string } = {}, page = 1, pageSize = 20): {
     list: UserRow[];
     total: number;
   } {
@@ -121,6 +130,7 @@ export const UserModel = {
     const params: any[] = [];
     if (filters.department) { sql += ' AND department = ?'; params.push(filters.department); }
     if (filters.level) { sql += ' AND level = ?'; params.push(filters.level); }
+    if (filters.status) { sql += ' AND status = ?'; params.push(normalizeStatus(filters.status)); }
     if (filters.keyword) { sql += ' AND (name LIKE ? OR employee_no LIKE ?)'; params.push(`%${filters.keyword}%`, `%${filters.keyword}%`); }
 
     const countSql = sql.replace('SELECT *', 'SELECT COUNT(*) as total');
@@ -133,11 +143,12 @@ export const UserModel = {
     return { list, total };
   },
 
-  count(filters?: { department?: string; level?: string; keyword?: string }): number {
+  count(filters?: { department?: string; level?: string; keyword?: string; status?: string }): number {
     let sql = 'SELECT COUNT(*) as total FROM app_user WHERE 1=1';
     const params: any[] = [];
     if (filters?.department) { sql += ' AND department = ?'; params.push(filters.department); }
     if (filters?.level) { sql += ' AND level = ?'; params.push(filters.level); }
+    if (filters?.status) { sql += ' AND status = ?'; params.push(normalizeStatus(filters.status)); }
     if (filters?.keyword) { sql += ' AND (name LIKE ? OR employee_no LIKE ?)'; params.push(`%${filters.keyword}%`, `%${filters.keyword}%`); }
     return queryOne<{ total: number }>(sql, params)?.total ?? 0;
   },
@@ -148,7 +159,7 @@ export const UserModel = {
 
   create(data: {
     name: string; employee_no: string; department: string; position: string;
-    level: string; phone: string; id_card_tail: string; password: string; is_admin?: number; managed_departments?: string[];
+    level: string; phone: string; id_card_tail: string; password: string; status?: string; is_admin?: number; managed_departments?: string[];
   }): UserRow {
     const level = normalizeLevel(data.level);
     assertSingleMainLeader(level);
@@ -156,9 +167,9 @@ export const UserModel = {
     if (existing) throw new Error(`手机号 ${data.phone} + 证件后四位 ${data.id_card_tail} 已被用户「${existing.name}」使用`);
     const db = getDb();
     db.run(
-      `INSERT INTO app_user (name, employee_no, department, position, level, phone, id_card_tail, password, is_admin)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [data.name, data.employee_no, data.department, data.position, level, data.phone, data.id_card_tail, data.password, data.is_admin ?? 0]
+      `INSERT INTO app_user (name, employee_no, department, position, level, phone, id_card_tail, password, status, is_admin)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [data.name, data.employee_no, data.department, data.position, level, data.phone, data.id_card_tail, data.password, normalizeStatus(data.status), data.is_admin ?? 0]
     );
     const user = this.findByEmployeeNo(data.employee_no);
     if (!user) throw new Error('创建用户后无法获取记录');
@@ -169,7 +180,7 @@ export const UserModel = {
 
   update(id: number, data: Partial<{
     name: string; department: string; position: string; level: string;
-    phone: string; id_card_tail: string; password: string; is_admin: number; managed_departments: string[];
+    phone: string; id_card_tail: string; password: string; status: string; is_admin: number; managed_departments: string[];
   }>): void {
     const current = this.findById(id);
     if (!current) throw new Error('用户不存在');
@@ -192,6 +203,7 @@ export const UserModel = {
     if (data.phone !== undefined) { fields.push('phone = ?'); params.push(data.phone); }
     if (data.id_card_tail !== undefined) { fields.push('id_card_tail = ?'); params.push(data.id_card_tail); }
     if (data.password !== undefined) { fields.push('password = ?'); params.push(data.password); }
+    if (data.status !== undefined) { fields.push('status = ?'); params.push(normalizeStatus(data.status)); }
     if (data.is_admin !== undefined) { fields.push('is_admin = ?'); params.push(data.is_admin); }
     if (fields.length > 0) {
       fields.push("updated_at = datetime('now')");
@@ -212,7 +224,7 @@ export const UserModel = {
 
   batchCreate(users: Array<{
     name: string; employee_no: string; department: string; position: string;
-    level: string; phone: string; id_card_tail: string; password: string; managed_departments?: string[];
+    level: string; phone: string; id_card_tail: string; password: string; status?: string; managed_departments?: string[];
   }>): { success: number; errors: Array<{ row: number; message: string }> } {
     const errors: Array<{ row: number; message: string }> = [];
     let success = 0;
@@ -234,9 +246,9 @@ export const UserModel = {
         }
         assertSingleMainLeader(level);
         db.run(
-          `INSERT INTO app_user (name, employee_no, department, position, level, phone, id_card_tail, password)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          [u.name, u.employee_no, u.department, u.position, level, u.phone, u.id_card_tail, u.password]
+          `INSERT INTO app_user (name, employee_no, department, position, level, phone, id_card_tail, password, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [u.name, u.employee_no, u.department, u.position, level, u.phone, u.id_card_tail, u.password, normalizeStatus(u.status)]
         );
         const created = this.findByEmployeeNo(u.employee_no);
         if (created && level === 'division_leader') replaceManagedDepartments(created.id, u.managed_departments ?? []);
@@ -250,4 +262,5 @@ export const UserModel = {
   },
 
   toPublic,
+  normalizeStatus,
 };

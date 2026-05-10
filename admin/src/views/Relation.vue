@@ -169,6 +169,18 @@ async function handleGenerate() {
     const res: any = await relationApi.generate(Number(props.batchId))
     ElMessage.success(`生成完成，共 ${res.data?.total || 0} 条关系`)
     await loadList()
+  } catch (err: any) {
+    const missing = err?.data?.missing_questions || []
+    if (missing.length > 0) {
+      const rows = missing.map((item: any) =>
+        `${item.department} / ${item.employee_no} / ${item.name} / ${roleText[item.level] || item.level}`
+      ).join('<br/>')
+      await ElMessageBox.alert(
+        `以下人员未录入当前批次题目，无法生成评价关系：<br/><br/>${rows}<br/><br/>请先进入“题目模板”导入完整题目。`,
+        '题目缺失',
+        { dangerouslyUseHTMLString: true, type: 'warning' }
+      )
+    }
   } finally {
     generating.value = false
   }
