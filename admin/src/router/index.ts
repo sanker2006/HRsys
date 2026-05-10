@@ -21,6 +21,7 @@ const router = createRouter({
         { path: 'self-question/:batchId', name: 'SelfQuestion', component: () => import('../views/SelfQuestion.vue'), props: true },
         { path: 'relation/:batchId', name: 'Relation', component: () => import('../views/Relation.vue'), props: true },
         { path: 'progress/:batchId', name: 'Progress', component: () => import('../views/Progress.vue'), props: true },
+        { path: 'statistics/:batchId', name: 'Statistics', component: () => import('../views/Statistics.vue'), props: true },
         { path: 'user', name: 'User', component: () => import('../views/User.vue') },
         { path: 'department', name: 'Department', component: () => import('../views/Department.vue') },
       ],

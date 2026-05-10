@@ -6,9 +6,11 @@ import type { RelationRow } from '../model/relation.js';
 import { SelfQuestionModel } from '../model/self_question.js';
 import type { QuestionItem } from '../model/self_question.js';
 import { BatchModel } from '../model/batch.js';
+import { buildStatistics, type StatisticsRow } from '../service/statistics.js';
 import { success, fail } from '../utils/response.js';
 import { auth } from '../middleware/auth.js';
 import type { Context } from 'koa';
+import ExcelJS from 'exceljs';
 
 const router = new Router({ prefix: '/api/v1/answer' });
 
@@ -517,6 +519,89 @@ router.get('/admin/progress/:batchId', auth, async (ctx: Context) => {
     peer: { stats: stat(peerRels), list: buildList(peerRels) },
     downward: { stats: stat(downwardRels), list: buildList(downwardRels) },
   });
+});
+
+function formatStatScore(score: number | null): string | number {
+  return score === null || score === undefined ? '-' : Number(score).toFixed(1);
+}
+
+function statisticsExportRows(rows: StatisticsRow[]) {
+  return rows.map(row => ({
+    序号: row.index,
+    部门: row.department,
+    员工工号: row.employee_no,
+    员工姓名: row.name,
+    角色: row.role_label,
+    '业绩-领导评价': formatStatScore(row.performance_leader_score),
+    '业绩-自评价': formatStatScore(row.performance_self_score),
+    '业绩-计算分': formatStatScore(row.performance_score),
+    '综合-主要领导': formatStatScore(row.comprehensive_main_leader_score),
+    '综合-分管领导': formatStatScore(row.comprehensive_division_leader_score),
+    '综合-部门负责人评价': formatStatScore(row.comprehensive_manager_score),
+    中层互评: formatStatScore(row.comprehensive_manager_peer_score),
+    员工评议: formatStatScore(row.comprehensive_employee_review_score),
+    员工互评: formatStatScore(row.comprehensive_staff_peer_score),
+    '综合-自评价': formatStatScore(row.comprehensive_self_score),
+    '综合-计算分': formatStatScore(row.comprehensive_score),
+    最终总分: formatStatScore(row.final_score),
+    数据状态: row.data_status === 'complete' ? '完整' : '数据缺失',
+    缺失项: row.missing_items.join('；'),
+  }));
+}
+
+function safeFileName(name: string): string {
+  return name.replace(/[\\/:*?"<>|]/g, '_');
+}
+
+router.get('/admin/statistics/:batchId', auth, async (ctx: Context) => {
+  const batchId = parseInt(ctx.params.batchId);
+  const isAdmin = (ctx.state as any).isAdmin;
+  if (!isAdmin) return fail(ctx, '无权访问', -1, 403);
+  const result = buildStatistics(batchId);
+  if (!result) return fail(ctx, '批次不存在', -1, 404);
+  success(ctx, result);
+});
+
+router.get('/admin/statistics/:batchId/export', auth, async (ctx: Context) => {
+  const batchId = parseInt(ctx.params.batchId);
+  const isAdmin = (ctx.state as any).isAdmin;
+  if (!isAdmin) return fail(ctx, '无权访问', -1, 403);
+  const result = buildStatistics(batchId);
+  if (!result || !result.batch) return fail(ctx, '批次不存在', -1, 404);
+
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('数据统计');
+  const rows = statisticsExportRows(result.rows);
+  const headers = rows.length > 0 ? Object.keys(rows[0]) : [
+    '序号', '部门', '员工工号', '员工姓名', '角色',
+    '业绩-领导评价', '业绩-自评价', '业绩-计算分',
+    '综合-主要领导', '综合-分管领导', '综合-部门负责人评价',
+    '中层互评', '员工评议', '员工互评', '综合-自评价', '综合-计算分',
+    '最终总分', '数据状态', '缺失项',
+  ];
+  worksheet.columns = headers.map((header, index) => ({
+    header,
+    key: header,
+    width: [8, 18, 14, 14, 12, 14, 12, 12, 14, 14, 18, 12, 12, 12, 12, 12, 12, 12, 36][index] || 12,
+  }));
+  worksheet.addRows(rows);
+  worksheet.getRow(1).font = { bold: true };
+  worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
+  worksheet.eachRow(row => {
+    row.eachCell(cell => {
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFD9E2EC' } },
+        left: { style: 'thin', color: { argb: 'FFD9E2EC' } },
+        bottom: { style: 'thin', color: { argb: 'FFD9E2EC' } },
+        right: { style: 'thin', color: { argb: 'FFD9E2EC' } },
+      };
+    });
+  });
+  const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+  const filename = `数据统计-${safeFileName(result.batch.name)}.xlsx`;
+  ctx.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  ctx.set('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
+  ctx.body = buffer;
 });
 
 router.post('/import', auth, async (ctx: Context) => {

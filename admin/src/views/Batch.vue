@@ -92,11 +92,16 @@
                 <span>04</span>
                 <strong>进度监控</strong>
               </button>
+              <button type="button" class="workflow-step stat-step" @click="$router.push(`/statistics/${row.id}`)">
+                <span>05</span>
+                <strong>数据统计</strong>
+              </button>
             </div>
           </div>
 
           <div class="batch-actions">
             <el-button type="primary" @click="$router.push(`/progress/${row.id}`)">查看进度</el-button>
+            <el-button plain @click="$router.push(`/statistics/${row.id}`)">数据统计</el-button>
             <el-dropdown @command="(cmd:string) => handleCommand(cmd, row)">
               <el-button plain>
                 更多操作
@@ -399,7 +404,7 @@ onMounted(loadBatches)
 
 .workflow-strip {
   display: grid;
-  grid-template-columns: repeat(4, minmax(132px, 1fr));
+  grid-template-columns: repeat(5, minmax(124px, 1fr));
   gap: 10px;
 }
 
@@ -440,6 +445,12 @@ onMounted(loadBatches)
   border-color: #93c5fd;
   background: #eef6ff;
   color: var(--admin-primary-2);
+}
+
+.stat-step {
+  border-color: #99f6e4;
+  background: #ecfdf5;
+  color: #0f766e;
 }
 
 .batch-actions {

@@ -133,6 +133,12 @@ export const answerApi = {
   getAdminProgress(batchId: number) {
     return api.get(`/answer/admin/progress/${batchId}`)
   },
+  statistics(batchId: number) {
+    return api.get(`/answer/admin/statistics/${batchId}`)
+  },
+  exportStatistics(batchId: number) {
+    return api.get(`/answer/admin/statistics/${batchId}/export`, { responseType: 'blob' })
+  },
 }
 
 export const departmentApi = {
