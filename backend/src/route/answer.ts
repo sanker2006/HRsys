@@ -39,6 +39,12 @@ function scoreBand(score: number): 'high' | 'mid' | 'low' {
   return 'low';
 }
 
+function isLeaderStaffTotalRelation(relation: RelationRow): boolean {
+  return relation.eval_type === 'downward'
+    && (relation.evaluator_level === 'division_leader' || relation.evaluator_level === 'main_leader')
+    && relation.target_level === 'staff';
+}
+
 function getSelfRelation(batchId: number, userId: number): RelationRow | undefined {
   return RelationModel.findByBatchId(batchId, {
     evaluator_id: userId,
@@ -183,6 +189,20 @@ function submitDetailed(relation: RelationRow, answers: any[], draft: boolean): 
   RelationModel.updateStatus(relation.id, draft ? 'draft' : 'completed');
 }
 
+function validateTotalAnswer(relation: RelationRow, score: unknown): { ok: boolean; score?: number; message?: string } {
+  const numericScore = Number(score);
+  if (!isLeaderStaffTotalRelation(relation)) return { ok: false, message: '该评价关系不支持总分评价，请按题目逐项评分' };
+  if (!Number.isFinite(numericScore)) return { ok: false, message: '分数格式不正确' };
+  if (!isOneDecimal(numericScore)) return { ok: false, message: '评分最多支持 1 位小数' };
+  if (numericScore < 0 || numericScore > 30) return { ok: false, message: '分数必须在 0~30 之间' };
+  return { ok: true, score: round1(numericScore) };
+}
+
+function submitTotal(relation: RelationRow, score: number, draft: boolean): void {
+  AnswerModel.submitTotalEval(relation.id, score, draft);
+  RelationModel.updateStatus(relation.id, draft ? 'draft' : 'completed');
+}
+
 function buildManagerQuota(batchId: number, managerId: number, incoming: Map<number, number> = new Map()): {
   total: number;
   high: number;
@@ -300,11 +320,7 @@ router.get('/relation/:relationId', async (ctx: Context) => {
   const answers = AnswerModel.findByRelationId(relationId);
   const context = buildQuestionContext(relation);
   const gate = canEvaluate(relation);
-  const mode = relation.eval_type === 'downward'
-    && (relation.evaluator_level === 'division_leader' || relation.evaluator_level === 'main_leader')
-    && relation.target_level === 'staff'
-      ? 'leader_staff_total'
-      : 'detail';
+  const mode = isLeaderStaffTotalRelation(relation) ? 'leader_staff_total' : 'detail';
 
   success(ctx, {
     relation,
@@ -380,21 +396,13 @@ router.post('/total', async (ctx: Context) => {
   const batchGate = canSubmitForBatch(relation.batch_id);
   if (!batchGate.ok) return fail(ctx, batchGate.message);
 
-  const numericScore = Number(score);
-  if (!Number.isFinite(numericScore)) return fail(ctx, '分数格式不正确');
-  if (!isOneDecimal(numericScore)) return fail(ctx, '评分最多支持 1 位小数');
-  const max = relation.eval_type === 'downward'
-    && (relation.evaluator_level === 'division_leader' || relation.evaluator_level === 'main_leader')
-    && relation.target_level === 'staff'
-      ? 30
-      : 100;
-  if (numericScore < 0 || numericScore > max) return fail(ctx, `分数必须在 0~${max} 之间`);
-
   const gate = canEvaluate(relation);
   if (!gate.ok) return fail(ctx, gate.reason);
 
-  AnswerModel.submitTotalEval(relation_id, round1(numericScore), !!draft);
-  RelationModel.updateStatus(relation_id, draft ? 'draft' : 'completed');
+  const total = validateTotalAnswer(relation, score);
+  if (!total.ok) return fail(ctx, total.message);
+
+  submitTotal(relation, total.score!, !!draft);
   success(ctx, null, draft ? '草稿已保存' : '提交成功');
 });
 
@@ -405,7 +413,7 @@ router.post('/batch', async (ctx: Context) => {
 
   const detailed: Array<{ relation: RelationRow; answers: any[] }> = [];
   const totals: Array<{ relation: RelationRow; score: number }> = [];
-  const managerIncoming = new Map<number, number>();
+  const quotaGroups = new Map<string, { batchId: number; managerId: number; incoming: Map<number, number> }>();
 
   for (const item of items) {
     const relation = RelationModel.findById(Number(item.relation_id));
@@ -421,34 +429,29 @@ router.post('/batch', async (ctx: Context) => {
       if (err) return fail(ctx, `${relation.target_name || relation.target_id}：${err}`);
       detailed.push({ relation, answers: item.answers });
       if (!draft && relation.evaluator_level === 'manager' && relation.target_level === 'staff') {
-        managerIncoming.set(relation.id, round1(item.answers.reduce((sum: number, a: any) => sum + Number(a.score || 0), 0)));
+        const total = round1(item.answers.reduce((sum: number, a: any) => sum + Number(a.score || 0), 0));
+        const key = `${relation.batch_id}:${relation.evaluator_id}`;
+        if (!quotaGroups.has(key)) {
+          quotaGroups.set(key, { batchId: relation.batch_id, managerId: relation.evaluator_id, incoming: new Map() });
+        }
+        quotaGroups.get(key)!.incoming.set(relation.id, total);
       }
     } else {
-      const score = Number(item.score);
-      if (!Number.isFinite(score) || score < 0 || !isOneDecimal(score)) return fail(ctx, `${relation.target_name || relation.target_id}：分数格式不正确`);
-      const max = relation.evaluator_level === 'division_leader' || relation.evaluator_level === 'main_leader' ? 30 : 100;
-      if (score > max) return fail(ctx, `${relation.target_name || relation.target_id}：分数必须在 0~${max} 之间`);
-      totals.push({ relation, score: round1(score) });
+      const total = validateTotalAnswer(relation, item.score);
+      if (!total.ok) return fail(ctx, `${relation.target_name || relation.target_id}：${total.message}`);
+      totals.push({ relation, score: total.score! });
     }
   }
 
-  if (!draft && managerIncoming.size > 0) {
-    const managerIds = new Set(
-      detailed
-        .filter(i => i.relation.evaluator_level === 'manager' && i.relation.target_level === 'staff')
-        .map(i => i.relation.evaluator_id)
-    );
-    for (const managerId of managerIds) {
-      const quota = validateManagerQuota(detailed[0].relation.batch_id, managerId, managerIncoming);
+  if (!draft && quotaGroups.size > 0) {
+    for (const group of quotaGroups.values()) {
+      const quota = validateManagerQuota(group.batchId, group.managerId, group.incoming);
       if (!quota.ok) return fail(ctx, quota.message);
     }
   }
 
   for (const item of detailed) submitDetailed(item.relation, item.answers, !!draft);
-  for (const item of totals) {
-    AnswerModel.submitTotalEval(item.relation.id, item.score, !!draft);
-    RelationModel.updateStatus(item.relation.id, draft ? 'draft' : 'completed');
-  }
+  for (const item of totals) submitTotal(item.relation, item.score, !!draft);
 
   success(ctx, { saved: detailed.length + totals.length }, draft ? '草稿已保存' : '提交成功');
 });
@@ -608,24 +611,50 @@ router.post('/import', auth, async (ctx: Context) => {
   const { answers } = ctx.request.body as any;
   if (!Array.isArray(answers)) return fail(ctx, 'answers 必须是数组');
   const userId = getUserId(ctx);
-  let imported = 0;
+  const detailed: Array<{ relation: RelationRow; answers: any[]; draft: boolean }> = [];
+  const totals: Array<{ relation: RelationRow; score: number; draft: boolean }> = [];
+  const quotaGroups = new Map<string, { batchId: number; managerId: number; incoming: Map<number, number> }>();
+
   for (const a of answers) {
     const relation = RelationModel.findById(a.relation_id);
-    if (!relation || relation.evaluator_id !== userId) continue;
+    if (!relation) return fail(ctx, `评价关系 ${a.relation_id} 不存在`, -1, 404);
+    if (relation.evaluator_id !== userId) return fail(ctx, '无权操作', -1, 403);
     const batchGate = canSubmitForBatch(relation.batch_id);
-    if (!batchGate.ok) continue;
+    if (!batchGate.ok) return fail(ctx, batchGate.message);
     const gate = canEvaluate(relation);
-    if (!gate.ok) continue;
+    if (!gate.ok) return fail(ctx, `${relation.target_name || relation.target_id}：${gate.reason}`);
+
+    const draft = !!a.draft;
     if (Array.isArray(a.answers)) {
       const err = validateDetailedAnswers(relation, a.answers, !!a.draft);
-      if (err) continue;
-      submitDetailed(relation, a.answers, !!a.draft);
+      if (err) return fail(ctx, `${relation.target_name || relation.target_id}：${err}`);
+      detailed.push({ relation, answers: a.answers, draft });
+      if (!draft && relation.evaluator_level === 'manager' && relation.target_level === 'staff') {
+        const total = round1(a.answers.reduce((sum: number, item: any) => sum + Number(item.score || 0), 0));
+        const key = `${relation.batch_id}:${relation.evaluator_id}`;
+        if (!quotaGroups.has(key)) {
+          quotaGroups.set(key, { batchId: relation.batch_id, managerId: relation.evaluator_id, incoming: new Map() });
+        }
+        quotaGroups.get(key)!.incoming.set(relation.id, total);
+      }
     } else if (a.score !== undefined) {
-      AnswerModel.submitTotalEval(a.relation_id, Number(a.score), !!a.draft);
-      RelationModel.updateStatus(a.relation_id, a.draft ? 'draft' : 'completed');
+      const total = validateTotalAnswer(relation, a.score);
+      if (!total.ok) return fail(ctx, `${relation.target_name || relation.target_id}：${total.message}`);
+      totals.push({ relation, score: total.score!, draft });
+    } else {
+      return fail(ctx, `${relation.target_name || relation.target_id}：缺少评分数据`);
     }
-    imported++;
   }
+
+  for (const group of quotaGroups.values()) {
+    const quota = validateManagerQuota(group.batchId, group.managerId, group.incoming);
+    if (!quota.ok) return fail(ctx, quota.message);
+  }
+
+  for (const item of detailed) submitDetailed(item.relation, item.answers, item.draft);
+  for (const item of totals) submitTotal(item.relation, item.score, item.draft);
+
+  const imported = detailed.length + totals.length;
   success(ctx, { imported }, `导入 ${imported} 条`);
 });
 

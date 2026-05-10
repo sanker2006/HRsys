@@ -282,6 +282,11 @@ async function main() {
     token: staff1Token,
     body: { relation_id: peerToStaff2.id, answers: peerAnswers(), draft: false },
   });
+  await fail('/answer/total', {
+    method: 'POST',
+    token: staff1Token,
+    body: { relation_id: peerToStaff2.id, score: 30, draft: false },
+  }, /不支持总分评价/);
 
   const expiredBatch = await ok('/batch/', {
     method: 'POST',
@@ -321,6 +326,11 @@ async function main() {
   const unlockedS1 = unlockedOverview.list.find(r => r.target_name === '研发员工1');
   assert.equal(unlockedS1.can_submit, true);
   assert.equal(unlockedOverview.quota.high, 0);
+  await fail('/answer/total', {
+    method: 'POST',
+    token: managerAToken,
+    body: { relation_id: s1.id, score: 90, draft: false },
+  }, /不支持总分评价/);
   await ok('/answer/detail', { method: 'POST', token: managerAToken, body: { relation_id: s1.id, answers: managerAnswers(90), draft: true } });
   await ok('/answer/detail', { method: 'POST', token: managerAToken, body: { relation_id: s2.id, answers: managerAnswers(88), draft: true } });
   const draftOnlyOverview = await ok(`/answer/downward/${batch.id}`, { token: managerAToken });
@@ -354,6 +364,11 @@ async function main() {
   await ok('/answer/detail', { method: 'POST', token: divisionToken, body: { relation_id: divToManager.id, answers: fullScoreAnswers(), draft: false } });
   await ok('/answer/total', { method: 'POST', token: divisionToken, body: { relation_id: divToStaff.id, score: 28.5, draft: false } });
   await fail('/answer/total', { method: 'POST', token: divisionToken, body: { relation_id: divToStaff.id, score: 31, draft: false } }, /0~30/);
+  await fail('/answer/import', {
+    method: 'POST',
+    token: divisionToken,
+    body: { answers: [{ relation_id: divToStaff.id, score: 28.55, draft: false }] },
+  }, /1 位小数/);
 
   const mainRels = await ok(`/relation/my?batch_id=${batch.id}`, { token: mainToken });
   assert.equal(mainRels.list.filter(r => r.eval_type === 'downward').length, 6);

@@ -24,7 +24,7 @@
       </div>
       <div class="metric-card">
         <div class="metric-label">人员总数</div>
-        <div class="metric-value">{{ users.length }}</div>
+        <div class="metric-value">{{ allUsers.length }}</div>
       </div>
       <div class="metric-card">
         <div class="metric-label">员工</div>
@@ -51,19 +51,19 @@
       </template>
 
       <div class="filters">
-        <el-input v-model="keyword" placeholder="搜索姓名/工号" clearable @change="loadUsers" />
-        <el-select v-model="filterDept" placeholder="部门" clearable @change="loadUsers">
+        <el-input v-model="keyword" placeholder="搜索姓名/工号" clearable @change="resetAndLoadUsers" />
+        <el-select v-model="filterDept" placeholder="部门" clearable @change="resetAndLoadUsers">
           <el-option v-for="d in departments" :key="d" :label="d" :value="d" />
         </el-select>
-        <el-select v-model="filterLevel" placeholder="角色" clearable @change="loadUsers">
+        <el-select v-model="filterLevel" placeholder="角色" clearable @change="resetAndLoadUsers">
           <el-option v-for="item in roleOptions" :key="item.value" :label="item.label" :value="item.value" />
         </el-select>
-        <el-select v-model="filterStatus" placeholder="状态" clearable @change="loadUsers">
+        <el-select v-model="filterStatus" placeholder="状态" clearable @change="resetAndLoadUsers">
           <el-option v-for="item in statusOptions" :key="item.value" :label="item.label" :value="item.value" />
         </el-select>
       </div>
 
-      <el-table :data="paginatedList" class="admin-table" v-loading="loading">
+      <el-table :data="users" class="admin-table" v-loading="loading">
         <el-table-column type="index" label="序号" width="60" align="center" />
         <el-table-column prop="name" label="姓名" width="100" />
         <el-table-column prop="employee_no" label="工号" width="110" />
@@ -96,14 +96,16 @@
       </el-table>
 
       <div class="pagination-wrap">
-        <span>共 {{ filteredList.length }} 条</span>
+        <span>共 {{ totalUsers }} 条</span>
         <el-pagination
           v-model:current-page="currentPage"
           v-model:page-size="pageSize"
           :page-sizes="[20, 50, 100]"
-          :total="filteredList.length"
+          :total="totalUsers"
           layout="sizes, prev, pager, next"
           background
+          @current-change="loadUsers"
+          @size-change="handlePageSizeChange"
         />
       </div>
     </el-card>
@@ -150,6 +152,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { departmentApi, userApi } from '../api'
 
 const users = ref<any[]>([])
+const allUsers = ref<any[]>([])
+const totalUsers = ref(0)
 const departments = ref<string[]>([])
 const loading = ref(false)
 const saving = ref(false)
@@ -188,16 +192,14 @@ const form = reactive({
   managed_departments: [] as string[],
 })
 
-const filteredList = computed(() => users.value)
-const paginatedList = computed(() => filteredList.value.slice((currentPage.value - 1) * pageSize.value, currentPage.value * pageSize.value))
 const roleCount = computed(() => ({
-  staff: users.value.filter(u => u.level === 'staff').length,
-  manager: users.value.filter(u => u.level === 'manager').length,
-  leader: users.value.filter(u => ['main_leader', 'division_leader'].includes(u.level)).length,
+  staff: allUsers.value.filter(u => u.level === 'staff').length,
+  manager: allUsers.value.filter(u => u.level === 'manager').length,
+  leader: allUsers.value.filter(u => ['main_leader', 'division_leader'].includes(u.level)).length,
 }))
 const statusCount = computed(() => ({
-  active: users.value.filter(u => (u.status || 'active') === 'active').length,
-  inactive: users.value.filter(u => u.status === 'inactive').length,
+  active: allUsers.value.filter(u => (u.status || 'active') === 'active').length,
+  inactive: allUsers.value.filter(u => u.status === 'inactive').length,
 }))
 
 function resetForm() {
@@ -228,11 +230,34 @@ function openDialog(row?: any) {
 async function loadUsers() {
   loading.value = true
   try {
-    const res: any = await userApi.list({ keyword: keyword.value, department: filterDept.value, level: filterLevel.value, status: filterStatus.value })
+    const res: any = await userApi.list({
+      keyword: keyword.value,
+      department: filterDept.value,
+      level: filterLevel.value,
+      status: filterStatus.value,
+      page: currentPage.value,
+      pageSize: pageSize.value,
+    })
     users.value = res.data?.list || []
+    totalUsers.value = res.data?.total || 0
   } finally {
     loading.value = false
   }
+}
+
+async function loadUserStats() {
+  const res: any = await userApi.export({})
+  allUsers.value = res.data || []
+}
+
+async function resetAndLoadUsers() {
+  currentPage.value = 1
+  await loadUsers()
+}
+
+async function handlePageSizeChange() {
+  currentPage.value = 1
+  await loadUsers()
 }
 
 async function handleSave() {
@@ -243,7 +268,7 @@ async function handleSave() {
     else await userApi.create(payload)
     showDialog.value = false
     resetForm()
-    await loadUsers()
+    await Promise.all([loadUsers(), loadUserStats()])
     ElMessage.success('保存成功')
   } finally {
     saving.value = false
@@ -253,7 +278,7 @@ async function handleSave() {
 async function handleDelete(row: any) {
   await ElMessageBox.confirm(`确认删除用户「${row.name}」？`, '删除用户')
   await userApi.delete(row.id)
-  await loadUsers()
+  await Promise.all([loadUsers(), loadUserStats()])
   ElMessage.success('已删除')
 }
 
@@ -277,7 +302,7 @@ async function handleImport(file: File) {
       const res: any = await userApi.import(items)
       ElMessage.success(`成功导入 ${res.data?.success || 0} 人`)
       if (res.data?.errors?.length) ElMessage.warning(`${res.data.errors.length} 条失败，请检查数据`)
-      await loadUsers()
+      await Promise.all([loadUsers(), loadUserStats()])
     } catch {
       ElMessage.error('导入失败')
     }
@@ -287,7 +312,7 @@ async function handleImport(file: File) {
 }
 
 onMounted(async () => {
-  await loadUsers()
+  await Promise.all([loadUsers(), loadUserStats()])
   const res: any = await departmentApi.list()
   departments.value = (res.data?.list || []).map((d: any) => d.name)
 })
