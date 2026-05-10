@@ -100,8 +100,6 @@
           </div>
 
           <div class="batch-actions">
-            <el-button type="primary" @click="$router.push(`/progress/${row.id}`)">查看进度</el-button>
-            <el-button plain @click="$router.push(`/statistics/${row.id}`)">数据统计</el-button>
             <el-dropdown @command="(cmd:string) => handleCommand(cmd, row)">
               <el-button plain>
                 更多操作
