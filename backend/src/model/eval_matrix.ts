@@ -22,6 +22,7 @@ const DEFAULT_MATRIX: Omit<EvalMatrixRow, 'id' | 'batch_id' | 'created_at'>[] = 
   { from_role: 'manager',         to_role: 'staff',   eval_type: 'downward', enabled: 1 },
   { from_role: 'manager',         to_role: 'self',    eval_type: 'self',     enabled: 1 },
   { from_role: 'staff',           to_role: 'staff',   eval_type: 'peer',     enabled: 1 },
+  { from_role: 'staff',           to_role: 'manager', eval_type: 'peer',     enabled: 1 },
   { from_role: 'staff',           to_role: 'self',    eval_type: 'self',     enabled: 1 },
 ];
 

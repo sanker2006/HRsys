@@ -27,9 +27,9 @@ type RelationInput = {
   eval_type: string;
 };
 
-function isEnabled(matrix: ReturnType<typeof EvalMatrixModel.findEnabledByBatchId>, evalType: string, toRole?: string): boolean {
+function isEnabled(matrix: ReturnType<typeof EvalMatrixModel.findEnabledByBatchId>, fromRole: string, toRole: string, evalType: string): boolean {
   if (matrix.length === 0) return true;
-  return matrix.some(row => row.eval_type === evalType && (!toRole || row.to_role === toRole));
+  return matrix.some(row => row.from_role === fromRole && row.to_role === toRole && row.eval_type === evalType);
 }
 
 function addRelation(rows: RelationInput[], batchId: number, evaluator: any, target: any, evalType: string): void {
@@ -56,13 +56,14 @@ export function generateRelations(batchId: number): GenResult {
   const staff = users.filter(u => u.level === 'staff');
   const relations: RelationInput[] = [];
 
-  if (isEnabled(matrix, 'self', 'self')) {
+  if (isEnabled(matrix, 'manager', 'self', 'self') || isEnabled(matrix, 'staff', 'self', 'self')) {
     for (const user of [...managers, ...staff]) {
+      if (!isEnabled(matrix, user.level, 'self', 'self')) continue;
       addRelation(relations, batchId, user, user, 'self');
     }
   }
 
-  if (isEnabled(matrix, 'peer', 'manager')) {
+  if (isEnabled(matrix, 'manager', 'manager', 'peer')) {
     for (const evaluator of managers) {
       for (const target of managers) {
         if (evaluator.id === target.id) continue;
@@ -72,7 +73,7 @@ export function generateRelations(batchId: number): GenResult {
     }
   }
 
-  if (isEnabled(matrix, 'peer', 'staff')) {
+  if (isEnabled(matrix, 'staff', 'staff', 'peer')) {
     for (const evaluator of staff) {
       for (const target of staff) {
         if (evaluator.id === target.id) continue;
@@ -82,7 +83,14 @@ export function generateRelations(batchId: number): GenResult {
     }
   }
 
-  if (isEnabled(matrix, 'downward', 'staff')) {
+  if (isEnabled(matrix, 'staff', 'manager', 'peer')) {
+    for (const evaluator of staff) {
+      const manager = managers.find(target => target.department === evaluator.department);
+      if (manager) addRelation(relations, batchId, evaluator, manager, 'peer');
+    }
+  }
+
+  if (isEnabled(matrix, 'manager', 'staff', 'downward')) {
     for (const manager of managers) {
       for (const target of staff) {
         if (manager.department === target.department) {
@@ -92,16 +100,21 @@ export function generateRelations(batchId: number): GenResult {
     }
   }
 
-  if (isEnabled(matrix, 'downward', 'manager') || isEnabled(matrix, 'downward', 'staff')) {
+  if (
+    isEnabled(matrix, 'division_leader', 'manager', 'downward') ||
+    isEnabled(matrix, 'division_leader', 'staff', 'downward') ||
+    isEnabled(matrix, 'main_leader', 'manager', 'downward') ||
+    isEnabled(matrix, 'main_leader', 'staff', 'downward')
+  ) {
     for (const leader of divisionLeaders) {
       const departments = new Set((leader.managed_departments || []).filter(Boolean));
       if (departments.size === 0) continue;
-      if (isEnabled(matrix, 'downward', 'manager')) {
+      if (isEnabled(matrix, 'division_leader', 'manager', 'downward')) {
         for (const target of managers) {
           if (departments.has(target.department)) addRelation(relations, batchId, leader, target, 'downward');
         }
       }
-      if (isEnabled(matrix, 'downward', 'staff')) {
+      if (isEnabled(matrix, 'division_leader', 'staff', 'downward')) {
         for (const target of staff) {
           if (departments.has(target.department)) addRelation(relations, batchId, leader, target, 'downward');
         }
@@ -109,10 +122,10 @@ export function generateRelations(batchId: number): GenResult {
     }
 
     for (const leader of mainLeaders) {
-      if (isEnabled(matrix, 'downward', 'manager')) {
+      if (isEnabled(matrix, 'main_leader', 'manager', 'downward')) {
         for (const target of managers) addRelation(relations, batchId, leader, target, 'downward');
       }
-      if (isEnabled(matrix, 'downward', 'staff')) {
+      if (isEnabled(matrix, 'main_leader', 'staff', 'downward')) {
         for (const target of staff) addRelation(relations, batchId, leader, target, 'downward');
       }
     }

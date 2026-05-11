@@ -255,7 +255,7 @@ async function main() {
 
   const gen = await ok(`/relation/generate/${batch.id}`, { method: 'POST', token: adminToken });
   assert.equal(gen.self, 6);
-  assert.equal(gen.peer, 6);
+  assert.equal(gen.peer, 10);
   assert.equal(gen.downward, 14);
   await ok(`/batch/${batch.id}/start`, { method: 'POST', token: adminToken });
 
@@ -264,6 +264,9 @@ async function main() {
   assert.equal(relations.filter(r => r.eval_type === 'self' && ['main_leader', 'division_leader'].includes(r.evaluator_level)).length, 0);
   assert.equal(relations.filter(r => r.evaluator_name === '分管A' && r.target_department === '销售部').length, 0);
   assert.equal(relations.filter(r => r.evaluator_name === '主领导' && r.eval_type === 'downward').length, 6);
+
+  assert(relations.some(r => r.eval_type === 'peer' && r.evaluator_level === 'staff' && r.target_level === 'manager' && r.evaluator_department === r.target_department), 'staff to own manager peer relation exists');
+  assert.equal(relations.some(r => r.eval_type === 'peer' && r.evaluator_level === 'staff' && r.target_level === 'manager' && r.evaluator_department !== r.target_department), false);
 
   const staff1Token = await h5Token('13800000005', '0005');
   const staff2Token = await h5Token('13800000006', '0006');
@@ -277,10 +280,17 @@ async function main() {
   const staff1Relations = await ok(`/relation/my?batch_id=${batch.id}`, { token: staff1Token });
   const peerToStaff2 = staff1Relations.list.find(r => r.eval_type === 'peer' && r.target_name === '研发员工2');
   assert(peerToStaff2, 'staff peer relation exists');
+  const peerToOwnManager = staff1Relations.list.find(r => r.eval_type === 'peer' && r.target_level === 'manager' && r.target_department === r.evaluator_department);
+  assert(peerToOwnManager, 'staff peer relation to own manager exists');
   await ok('/answer/detail', {
     method: 'POST',
     token: staff1Token,
     body: { relation_id: peerToStaff2.id, answers: peerAnswers(), draft: false },
+  });
+  await ok('/answer/detail', {
+    method: 'POST',
+    token: staff1Token,
+    body: { relation_id: peerToOwnManager.id, answers: peerAnswers(0.85), draft: false },
   });
   await fail('/answer/total', {
     method: 'POST',
@@ -302,6 +312,7 @@ async function main() {
   const lockedS1 = lockedOverview.list.find(r => r.target_name === '研发员工1');
   assert.equal(lockedS1.can_submit, false);
   assert.match(lockedS1.blocked_reason, /自评/);
+
   await fail('/answer/detail', {
     method: 'POST',
     token: managerAToken,
@@ -339,6 +350,19 @@ async function main() {
   const afterSingleSubmit = await ok(`/answer/downward/${batch.id}`, { token: managerAToken });
   assert.equal(afterSingleSubmit.quota.high, 1);
   assert.equal(afterSingleSubmit.list.find(r => r.target_name === '研发员工1').status, 'completed');
+  const earlyDivisionRels = await ok(`/relation/my?batch_id=${batch.id}`, { token: divisionToken });
+  const earlyDivToManager = earlyDivisionRels.list.find(r => r.target_level === 'manager' && r.target_department === s1.target_department);
+  const earlyDivToStaff = earlyDivisionRels.list.find(r => r.target_id === s1.target_id);
+  await fail('/answer/detail', {
+    method: 'POST',
+    token: divisionToken,
+    body: { relation_id: earlyDivToManager.id, answers: fullScoreAnswers(), draft: false },
+  });
+  await fail('/answer/total', {
+    method: 'POST',
+    token: divisionToken,
+    body: { relation_id: earlyDivToStaff.id, score: 28.5, draft: false },
+  });
   await fail('/answer/detail', {
     method: 'POST',
     token: managerAToken,

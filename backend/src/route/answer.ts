@@ -92,6 +92,9 @@ function canEvaluate(relation: RelationRow): { ok: boolean; reason?: string } {
       if (!managerRel || managerRel.status !== 'completed') {
         return { ok: false, reason: '部门负责人完成该员工评分后，领导才能评价' };
       }
+      if (!managerHasCompletedDepartment(relation.batch_id, managerRel.evaluator_id)) {
+        return { ok: false, reason: '部门负责人完成本部门所有员工评分后，领导才能评价该部门人员' };
+      }
       return { ok: true };
     }
   }

@@ -75,6 +75,18 @@
             <el-tag type="info" size="small">员工互评只在本部门内生成，不受跨部门开关影响</el-tag>
           </div>
         </div>
+
+        <div class="eval-group">
+          <div class="group-label">
+            <span class="role-tag staff">员工</span>
+            <el-checkbox v-model="peerStaffToManagerEnabled" :true-value="1" :false-value="0">
+              启用员工评议本部门负责人
+            </el-checkbox>
+          </div>
+          <div class="group-options">
+            <el-tag type="info" size="small">员工评议部门负责人只评价综合题，用于统计中的“员工评议”</el-tag>
+          </div>
+        </div>
       </section>
 
       <section class="section-block">
@@ -149,6 +161,7 @@ const defaultRows: MatrixRow[] = [
   { from_role: 'manager', to_role: 'staff', eval_type: 'downward', enabled: 1 },
   { from_role: 'manager', to_role: 'self', eval_type: 'self', enabled: 1 },
   { from_role: 'staff', to_role: 'staff', eval_type: 'peer', enabled: 1 },
+  { from_role: 'staff', to_role: 'manager', eval_type: 'peer', enabled: 1 },
   { from_role: 'staff', to_role: 'self', eval_type: 'self', enabled: 1 },
 ]
 
@@ -163,6 +176,11 @@ const peerManagerEnabled = computed({
 const peerStaffEnabled = computed({
   get: () => findRow('staff', 'staff', 'peer')?.enabled ?? 1,
   set: value => setEnabled('staff', 'staff', 'peer', value),
+})
+
+const peerStaffToManagerEnabled = computed({
+  get: () => findRow('staff', 'manager', 'peer')?.enabled ?? 1,
+  set: value => setEnabled('staff', 'manager', 'peer', value),
 })
 
 function rowKey(row: MatrixRow) {

@@ -197,13 +197,17 @@ function buildManagerRow(
     answersMap,
     'total'
   ));
-  const employeeReview = managerPeer;
+  const staffReview = average(completedRelationScores(
+    relationsToTarget(relations, user.id, { evalType: 'peer', evaluatorLevel: 'staff' }),
+    answersMap,
+    'total'
+  ));
   const comprehensiveMissing: string[] = [];
   const comprehensiveScore = weighted([
     { label: '综合-主要领导评价', value: mainComp, weight: 0.4 },
     { label: '综合-分管领导评价', value: divisionComp, weight: 0.25 },
     { label: '中层互评', value: managerPeer, weight: 0.2 },
-    { label: '员工评议', value: employeeReview, weight: 0.15 },
+    { label: '员工评议', value: staffReview, weight: 0.15 },
   ], comprehensiveMissing);
   missing.push(...comprehensiveMissing);
 
@@ -225,7 +229,7 @@ function buildManagerRow(
     comprehensive_division_leader_score: divisionComp,
     comprehensive_manager_score: null,
     comprehensive_manager_peer_score: managerPeer,
-    comprehensive_employee_review_score: employeeReview,
+    comprehensive_employee_review_score: staffReview,
     comprehensive_staff_peer_score: null,
     comprehensive_self_score: comprehensiveSelf,
     comprehensive_score: comprehensiveScore,
