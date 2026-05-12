@@ -1,5 +1,4 @@
-import { getDb, saveDb } from '../db/index.js';
-import { queryAll, queryOne } from '../db/query.js';
+import { driver, execute, queryAll, queryOne, transaction, type DbExecutor } from '../db/query.js';
 
 export interface AnswerRow {
   id: number;
@@ -12,24 +11,22 @@ export interface AnswerRow {
   updated_at: string;
 }
 
-function rollbackQuietly(): void {
-  try {
-    getDb().run('ROLLBACK');
-  } catch {
-    // no active transaction
+async function lockRelationForWrite(tx: DbExecutor, relationId: number): Promise<void> {
+  if (driver() === 'postgres') {
+    await tx.execute('SELECT pg_advisory_xact_lock(?)', [relationId]);
   }
 }
 
 export const AnswerModel = {
-  findByRelationId(relationId: number): AnswerRow[] {
+  findByRelationId(relationId: number): Promise<AnswerRow[]> {
     return queryAll<AnswerRow>(
       'SELECT * FROM answer WHERE relation_id = ? ORDER BY question_seq NULLS FIRST',
       [relationId]
     );
   },
 
-  findByRelationIds(relationIds: number[]): AnswerRow[] {
-    if (relationIds.length === 0) return [];
+  findByRelationIds(relationIds: number[]): Promise<AnswerRow[]> {
+    if (relationIds.length === 0) return Promise.resolve([]);
     const placeholders = relationIds.map(() => '?').join(',');
     return queryAll<AnswerRow>(
       `SELECT * FROM answer WHERE relation_id IN (${placeholders}) ORDER BY relation_id, question_seq NULLS FIRST`,
@@ -37,85 +34,117 @@ export const AnswerModel = {
     );
   },
 
-  findByRelationAndSeq(relationId: number, seq: number): AnswerRow | undefined {
+  findByRelationAndSeq(relationId: number, seq: number): Promise<AnswerRow | undefined> {
     return queryOne<AnswerRow>(
       'SELECT * FROM answer WHERE relation_id = ? AND question_seq = ?',
       [relationId, seq]
     );
   },
 
-  findTotalByRelationId(relationId: number): AnswerRow | undefined {
+  findTotalByRelationId(relationId: number): Promise<AnswerRow | undefined> {
     return queryOne<AnswerRow>(
       'SELECT * FROM answer WHERE relation_id = ? AND is_total = 1',
       [relationId]
     );
   },
 
-  upsertQuestion(relationId: number, seq: number, score: number, isDraft = false): void {
-    const db = getDb();
-    db.run('DELETE FROM answer WHERE relation_id = ? AND question_seq = ?', [relationId, seq]);
-    db.run(
-      `INSERT INTO answer (relation_id, question_seq, score, is_total, is_draft)
-       VALUES (?, ?, ?, 0, ?)`,
-      [relationId, seq, score, isDraft ? 1 : 0]
-    );
-    saveDb();
+  async upsertQuestion(relationId: number, seq: number, score: number, isDraft = false): Promise<void> {
+    await transaction(async tx => {
+      await lockRelationForWrite(tx, relationId);
+      await tx.execute('DELETE FROM answer WHERE relation_id = ? AND question_seq = ?', [relationId, seq]);
+      await tx.execute(
+        `INSERT INTO answer (relation_id, question_seq, score, is_total, is_draft)
+         VALUES (?, ?, ?, 0, ?)`,
+        [relationId, seq, score, isDraft ? 1 : 0]
+      );
+    });
   },
 
-  upsertTotal(relationId: number, score: number, isDraft = false): void {
-    const db = getDb();
-    try {
-      db.run('BEGIN');
-      db.run('DELETE FROM answer WHERE relation_id = ? AND is_total = 1', [relationId]);
-      db.run(
+  async upsertTotal(relationId: number, score: number, isDraft = false): Promise<void> {
+    await transaction(async tx => {
+      await lockRelationForWrite(tx, relationId);
+      await tx.execute('DELETE FROM answer WHERE relation_id = ? AND is_total = 1', [relationId]);
+      await tx.execute(
         `INSERT INTO answer (relation_id, question_seq, score, is_total, is_draft)
          VALUES (?, NULL, ?, 1, ?)`,
         [relationId, score, isDraft ? 1 : 0]
       );
-      db.run('COMMIT');
-      saveDb();
-    } catch (err) {
-      rollbackQuietly();
-      throw err;
-    }
+    });
   },
 
-  submitSelfEval(relationId: number, answers: Array<{ seq: number; score: number }>, isDraft = false): void {
-    const db = getDb();
-    try {
-      db.run('BEGIN');
-      db.run('DELETE FROM answer WHERE relation_id = ?', [relationId]);
+  async submitSelfEval(relationId: number, answers: Array<{ seq: number; score: number }>, isDraft = false): Promise<void> {
+    await transaction(async tx => {
+      await lockRelationForWrite(tx, relationId);
+      await tx.execute('DELETE FROM answer WHERE relation_id = ?', [relationId]);
       for (const a of answers) {
-        db.run(
+        await tx.execute(
           `INSERT INTO answer (relation_id, question_seq, score, is_total, is_draft)
            VALUES (?, ?, ?, 0, ?)`,
           [relationId, a.seq, a.score, isDraft ? 1 : 0]
         );
       }
       const total = answers.reduce((sum, a) => sum + a.score, 0);
-      db.run(
+      await tx.execute(
         `INSERT INTO answer (relation_id, question_seq, score, is_total, is_draft)
          VALUES (?, NULL, ?, 1, ?)`,
         [relationId, total, isDraft ? 1 : 0]
       );
-      db.run('COMMIT');
-      saveDb();
-    } catch (err) {
-      rollbackQuietly();
-      throw err;
-    }
+    });
   },
 
-  submitTotalEval(relationId: number, score: number, isDraft = false): void {
-    this.upsertTotal(relationId, score, isDraft);
+  async submitDetailedWithStatus(
+    relationId: number,
+    answers: Array<{ seq: number; score: number }>,
+    status: 'pending' | 'draft' | 'completed',
+    isDraft = false
+  ): Promise<void> {
+    await transaction(async tx => {
+      await lockRelationForWrite(tx, relationId);
+      await tx.execute('DELETE FROM answer WHERE relation_id = ?', [relationId]);
+      for (const a of answers) {
+        await tx.execute(
+          `INSERT INTO answer (relation_id, question_seq, score, is_total, is_draft)
+           VALUES (?, ?, ?, 0, ?)`,
+          [relationId, a.seq, a.score, isDraft ? 1 : 0]
+        );
+      }
+      const total = answers.reduce((sum, a) => sum + a.score, 0);
+      await tx.execute(
+        `INSERT INTO answer (relation_id, question_seq, score, is_total, is_draft)
+         VALUES (?, NULL, ?, 1, ?)`,
+        [relationId, total, isDraft ? 1 : 0]
+      );
+      await tx.execute("UPDATE relation SET status = ?, updated_at = datetime('now') WHERE id = ?", [status, relationId]);
+    });
   },
 
-  deleteByRelationId(relationId: number): void {
-    getDb().run('DELETE FROM answer WHERE relation_id = ?', [relationId]);
-    saveDb();
+  async submitTotalWithStatus(
+    relationId: number,
+    score: number,
+    status: 'pending' | 'draft' | 'completed',
+    isDraft = false
+  ): Promise<void> {
+    await transaction(async tx => {
+      await lockRelationForWrite(tx, relationId);
+      await tx.execute('DELETE FROM answer WHERE relation_id = ? AND is_total = 1', [relationId]);
+      await tx.execute(
+        `INSERT INTO answer (relation_id, question_seq, score, is_total, is_draft)
+         VALUES (?, NULL, ?, 1, ?)`,
+        [relationId, score, isDraft ? 1 : 0]
+      );
+      await tx.execute("UPDATE relation SET status = ?, updated_at = datetime('now') WHERE id = ?", [status, relationId]);
+    });
   },
 
-  findByBatchAndEvaluator(batchId: number, evaluatorId: number): AnswerRow[] {
+  submitTotalEval(relationId: number, score: number, isDraft = false): Promise<void> {
+    return this.upsertTotal(relationId, score, isDraft);
+  },
+
+  deleteByRelationId(relationId: number): Promise<void> {
+    return execute('DELETE FROM answer WHERE relation_id = ?', [relationId]);
+  },
+
+  findByBatchAndEvaluator(batchId: number, evaluatorId: number): Promise<AnswerRow[]> {
     return queryAll<AnswerRow>(
       `SELECT a.* FROM answer a
        JOIN relation r ON a.relation_id = r.id

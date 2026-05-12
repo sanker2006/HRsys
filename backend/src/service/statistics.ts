@@ -40,7 +40,7 @@ export interface StatisticsRow {
 }
 
 export interface StatisticsResult {
-  batch: ReturnType<typeof BatchModel.findById>;
+  batch: Awaited<ReturnType<typeof BatchModel.findById>>;
   summary: {
     total: number;
     complete: number;
@@ -120,7 +120,7 @@ function firstRelationToTarget(
   return relationsToTarget(relations, targetId, filters)[0];
 }
 
-function getTargetUsers(): StatUser[] {
+function getTargetUsers(): Promise<StatUser[]> {
   return queryAll<StatUser>(
     `SELECT u.id, u.name, u.employee_no, u.department, u.position, u.level,
             COALESCE(d.sort_order, 999999) as department_sort_order,
@@ -309,13 +309,13 @@ function buildStaffRow(
   };
 }
 
-export function buildStatistics(batchId: number): StatisticsResult | null {
-  const batch = BatchModel.findById(batchId);
+export async function buildStatistics(batchId: number): Promise<StatisticsResult | null> {
+  const batch = await BatchModel.findById(batchId);
   if (!batch) return null;
 
-  const users = getTargetUsers();
-  const relations = RelationModel.findByBatchId(batchId);
-  const answers = AnswerModel.findByRelationIds(relations.map(relation => relation.id));
+  const users = await getTargetUsers();
+  const relations = await RelationModel.findByBatchId(batchId);
+  const answers = await AnswerModel.findByRelationIds(relations.map(relation => relation.id));
   const answersMap = new Map<number, AnswerRow[]>();
   for (const answer of answers) {
     if (!answersMap.has(answer.relation_id)) answersMap.set(answer.relation_id, []);

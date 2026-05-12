@@ -24,7 +24,7 @@ router.post('/login', async (ctx: Context) => {
   const body = parseBody(ctx, loginSchema);
   if (!body) return;
 
-  const user = UserModel.findByAccount(body.account);
+  const user = await UserModel.findByAccount(body.account);
   if (!user || !compare(body.password, user.password)) {
     return fail(ctx, '账号或密码错误');
   }
@@ -37,7 +37,7 @@ router.post('/h5-login', async (ctx: Context) => {
   const body = parseBody(ctx, h5LoginSchema);
   if (!body) return;
 
-  const user = UserModel.findByPhoneAndIdCard(body.phone, body.idCardTail);
+  const user = await UserModel.findByPhoneAndIdCard(body.phone, body.idCardTail);
   if (!user) return fail(ctx, '手机号或身份证后四位错误');
   if (user.status !== 'active') return fail(ctx, '账号已停用，请联系管理员', -1, 403);
 
@@ -46,7 +46,7 @@ router.post('/h5-login', async (ctx: Context) => {
 });
 
 router.get('/me', auth, async (ctx: Context) => {
-  const user = UserModel.findById(ctx.state.userId);
+  const user = await UserModel.findById(ctx.state.userId);
   if (!user) return fail(ctx, '用户不存在', -1, 404);
   success(ctx, UserModel.toPublic(user));
 });

@@ -1,5 +1,4 @@
-import { getDb, saveDb } from '../db/index.js';
-import { queryAll, queryOne } from '../db/query.js';
+import { execute, queryAll, queryOne, transaction } from '../db/query.js';
 
 export interface RelationRow {
   id: number;
@@ -12,7 +11,6 @@ export interface RelationRow {
   is_anonymous: number;
   created_at: string;
   updated_at: string;
-  // JOINed fields
   evaluator_name?: string;
   evaluator_department?: string;
   evaluator_position?: string;
@@ -33,7 +31,7 @@ const REL_SELECT = `
 `;
 
 export const RelationModel = {
-  findById(id: number): RelationRow | undefined {
+  findById(id: number): Promise<RelationRow | undefined> {
     return queryOne<RelationRow>(
       `SELECT ${REL_SELECT} FROM relation r
        JOIN app_user e ON r.evaluator_id = e.id
@@ -45,7 +43,7 @@ export const RelationModel = {
 
   findByBatchId(batchId: number, filters?: {
     evaluator_id?: number; target_id?: number; eval_type?: string; status?: string;
-  }): RelationRow[] {
+  }): Promise<RelationRow[]> {
     let sql = `SELECT ${REL_SELECT} FROM relation r
                JOIN app_user e ON r.evaluator_id = e.id
                JOIN app_user t ON r.target_id = t.id
@@ -59,9 +57,9 @@ export const RelationModel = {
     return queryAll<RelationRow>(sql, params);
   },
 
-  findByBatchPage(batchId: number, filters: {
+  async findByBatchPage(batchId: number, filters: {
     evaluator_id?: number; target_id?: number; eval_type?: string; status?: string;
-  } = {}, page = 1, pageSize = 100): { list: RelationRow[]; total: number } {
+  } = {}, page = 1, pageSize = 100): Promise<{ list: RelationRow[]; total: number }> {
     const where: string[] = ['r.batch_id = ?'];
     const params: any[] = [batchId];
     if (filters.evaluator_id) { where.push('r.evaluator_id = ?'); params.push(filters.evaluator_id); }
@@ -70,12 +68,12 @@ export const RelationModel = {
     if (filters.status) { where.push('r.status = ?'); params.push(filters.status); }
 
     const whereSql = where.join(' AND ');
-    const totalRow = queryOne<{ total: number }>(
+    const totalRow = await queryOne<{ total: number }>(
       `SELECT COUNT(*) as total FROM relation r WHERE ${whereSql}`,
       params
     );
     const offset = (page - 1) * pageSize;
-    const list = queryAll<RelationRow>(
+    const list = await queryAll<RelationRow>(
       `SELECT ${REL_SELECT} FROM relation r
        JOIN app_user e ON r.evaluator_id = e.id
        JOIN app_user t ON r.target_id = t.id
@@ -84,11 +82,10 @@ export const RelationModel = {
        LIMIT ? OFFSET ?`,
       [...params, pageSize, offset]
     );
-    return { list, total: totalRow?.total ?? 0 };
+    return { list, total: Number(totalRow?.total ?? 0) };
   },
 
-  // 按评价者分组，统计某批次下某人的所有评价关系
-  findByEvaluator(batchId: number, evaluatorId: number): RelationRow[] {
+  findByEvaluator(batchId: number, evaluatorId: number): Promise<RelationRow[]> {
     return queryAll<RelationRow>(
       `SELECT ${REL_SELECT} FROM relation r
        JOIN app_user e ON r.evaluator_id = e.id
@@ -99,90 +96,82 @@ export const RelationModel = {
     );
   },
 
-  count(batchId: number, filters?: { status?: string }): number {
+  async count(batchId: number, filters?: { status?: string }): Promise<number> {
     let sql = 'SELECT COUNT(*) as total FROM relation WHERE batch_id = ?';
     const params: any[] = [batchId];
     if (filters?.status) { sql += ' AND status = ?'; params.push(filters.status); }
-    const row = queryOne<{ total: number }>(sql, params);
-    return row?.total ?? 0;
+    const row = await queryOne<{ total: number }>(sql, params);
+    return Number(row?.total ?? 0);
   },
 
-  create(data: {
+  async create(data: {
     batch_id: number; evaluator_id: number; target_id: number;
     role_type: string; eval_type: string; status?: string;
-  }): RelationRow {
-    const db = getDb();
-    db.run(
+  }): Promise<RelationRow> {
+    await execute(
       `INSERT INTO relation (batch_id, evaluator_id, target_id, role_type, eval_type, status)
        VALUES (?, ?, ?, ?, ?, ?)`,
       [data.batch_id, data.evaluator_id, data.target_id,
        data.role_type, data.eval_type, data.status ?? 'pending']
     );
-    saveDb();
-    const row = queryOne<RelationRow>('SELECT * FROM relation ORDER BY id DESC LIMIT 1');
+    const row = await queryOne<RelationRow>('SELECT * FROM relation ORDER BY id DESC LIMIT 1');
     if (!row) throw new Error('创建关系失败');
     return row;
   },
 
-  // 批量创建关系
-  batchCreate(relations: Array<{
+  async batchCreate(relations: Array<{
     batch_id: number; evaluator_id: number; target_id: number;
     role_type: string; eval_type: string;
-  }>): { success: number; errors: Array<{ message: string }> } {
+  }>): Promise<{ success: number; errors: Array<{ message: string }> }> {
     const errors: Array<{ message: string }> = [];
     let success = 0;
-    const db = getDb();
-    for (const r of relations) {
-      try {
-        // 检查重复
-        const existing = queryOne<{ id: number }>(
-          'SELECT id FROM relation WHERE batch_id=? AND evaluator_id=? AND target_id=? AND eval_type=?',
-          [r.batch_id, r.evaluator_id, r.target_id, r.eval_type]
-        );
-        if (existing) continue;
-        db.run(
-          `INSERT INTO relation (batch_id, evaluator_id, target_id, role_type, eval_type) VALUES (?, ?, ?, ?, ?)`,
-          [r.batch_id, r.evaluator_id, r.target_id, r.role_type, r.eval_type]
-        );
-        success++;
-      } catch (err: any) {
-        errors.push({ message: err.message });
+    await transaction(async tx => {
+      for (const r of relations) {
+        try {
+          const existing = await tx.queryOne<{ id: number }>(
+            'SELECT id FROM relation WHERE batch_id=? AND evaluator_id=? AND target_id=? AND eval_type=?',
+            [r.batch_id, r.evaluator_id, r.target_id, r.eval_type]
+          );
+          if (existing) continue;
+          await tx.execute(
+            `INSERT INTO relation (batch_id, evaluator_id, target_id, role_type, eval_type) VALUES (?, ?, ?, ?, ?)`,
+            [r.batch_id, r.evaluator_id, r.target_id, r.role_type, r.eval_type]
+          );
+          success++;
+        } catch (err: any) {
+          errors.push({ message: err.message });
+        }
       }
-    }
-    saveDb();
+    });
     return { success, errors };
   },
 
-  updateStatus(id: number, status: string): void {
-    getDb().run("UPDATE relation SET status = ?, updated_at = datetime('now') WHERE id = ?", [status, id]);
-    saveDb();
+  updateStatus(id: number, status: string): Promise<void> {
+    return execute("UPDATE relation SET status = ?, updated_at = datetime('now') WHERE id = ?", [status, id]);
   },
 
-  delete(id: number): void {
-    getDb().run('DELETE FROM relation WHERE id = ?', [id]);
-    saveDb();
+  delete(id: number): Promise<void> {
+    return execute('DELETE FROM relation WHERE id = ?', [id]);
   },
 
-  // 清空某批次的所有关系
-  deleteByBatchId(batchId: number): void {
-    getDb().run('DELETE FROM relation WHERE batch_id = ?', [batchId]);
-    saveDb();
+  deleteByBatchId(batchId: number): Promise<void> {
+    return execute('DELETE FROM relation WHERE batch_id = ?', [batchId]);
   },
 
-  // 获取某批次的关系统计
-  getStats(batchId: number): {
+  async getStats(batchId: number): Promise<{
     total: number; completed: number; pending: number; draft: number;
-  } {
-    const rows = queryAll<{ status: string; total: number }>(
+  }> {
+    const rows = await queryAll<{ status: string; total: number }>(
       'SELECT status, COUNT(*) as total FROM relation WHERE batch_id = ? GROUP BY status',
       [batchId]
     );
     const stats = { total: 0, completed: 0, pending: 0, draft: 0 };
     for (const row of rows) {
-      stats.total += row.total;
-      if (row.status === 'completed') stats.completed = row.total;
-      else if (row.status === 'pending') stats.pending = row.total;
-      else if (row.status === 'draft') stats.draft = row.total;
+      const count = Number(row.total);
+      stats.total += count;
+      if (row.status === 'completed') stats.completed = count;
+      else if (row.status === 'pending') stats.pending = count;
+      else if (row.status === 'draft') stats.draft = count;
     }
     return stats;
   },

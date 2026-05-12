@@ -1,5 +1,4 @@
-import { getDb, saveDb } from '../db/index.js';
-import { queryAll, queryOne } from '../db/query.js';
+import { execute, queryAll, queryOne, transaction } from '../db/query.js';
 
 export type QuestionSection = 'performance' | 'comprehensive';
 
@@ -151,7 +150,7 @@ function validateQuestionData(data: QuestionData): string | null {
 }
 
 export const SelfQuestionModel = {
-  findByBatchAndUser(batchId: number, userId: number): SelfQuestionRow | undefined {
+  findByBatchAndUser(batchId: number, userId: number): Promise<SelfQuestionRow | undefined> {
     return queryOne<SelfQuestionRow>(
       `SELECT sq.*, u.name as user_name, u.employee_no
        FROM self_question sq
@@ -161,7 +160,7 @@ export const SelfQuestionModel = {
     );
   },
 
-  findByBatchId(batchId: number): SelfQuestionRow[] {
+  findByBatchId(batchId: number): Promise<SelfQuestionRow[]> {
     return queryAll<SelfQuestionRow>(
       `SELECT sq.*, u.name as user_name, u.employee_no
        FROM self_question sq
@@ -189,69 +188,58 @@ export const SelfQuestionModel = {
     });
   },
 
-  batchUpsert(batchId: number, questions: SelfQuestionImportItem[]): {
+  async batchUpsert(batchId: number, questions: SelfQuestionImportItem[]): Promise<{
     success: number;
     errors: SelfQuestionImportError[];
-  } {
+  }> {
     const errors: SelfQuestionImportError[] = [];
     let success = 0;
-    const db = getDb();
 
-    for (const q of questions) {
-      const d = q.data;
-      const validationError = validateQuestionData(d);
-      if (validationError) {
-        errors.push({
-          row: q.row,
-          employee_no: q.employee_no,
-          user_name: q.user_name,
-          message: validationError,
-        });
-        continue;
+    await transaction(async tx => {
+      for (const q of questions) {
+        const d = q.data;
+        const validationError = validateQuestionData(d);
+        if (validationError) {
+          errors.push({ row: q.row, employee_no: q.employee_no, user_name: q.user_name, message: validationError });
+          continue;
+        }
+
+        try {
+          await tx.execute('DELETE FROM self_question WHERE batch_id = ? AND user_id = ?', [batchId, q.user_id]);
+          await tx.execute(
+            `INSERT INTO self_question (batch_id, user_id,
+             content_1, content_2, content_3, content_4, content_5,
+             content_6, content_7, content_8, content_9, content_10,
+             weight_1, weight_2, weight_3, weight_4, weight_5,
+             weight_6, weight_7, weight_8, weight_9, weight_10,
+             comp_content_1, comp_content_2, comp_content_3, comp_content_4, comp_content_5,
+             comp_weight_1, comp_weight_2, comp_weight_3, comp_weight_4, comp_weight_5)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [batchId, q.user_id,
+             d.content_1 ?? null, d.content_2 ?? null, d.content_3 ?? null,
+             d.content_4 ?? null, d.content_5 ?? null, d.content_6 ?? null,
+             d.content_7 ?? null, d.content_8 ?? null, d.content_9 ?? null,
+             d.content_10 ?? null,
+             d.weight_1 ?? null, d.weight_2 ?? null, d.weight_3 ?? null,
+             d.weight_4 ?? null, d.weight_5 ?? null, d.weight_6 ?? null,
+             d.weight_7 ?? null, d.weight_8 ?? null, d.weight_9 ?? null,
+             d.weight_10 ?? null,
+             d.comp_content_1 ?? null, d.comp_content_2 ?? null, d.comp_content_3 ?? null,
+             d.comp_content_4 ?? null, d.comp_content_5 ?? null,
+             d.comp_weight_1 ?? null, d.comp_weight_2 ?? null, d.comp_weight_3 ?? null,
+             d.comp_weight_4 ?? null, d.comp_weight_5 ?? null]
+          );
+          success++;
+        } catch (err: any) {
+          errors.push({ row: q.row, employee_no: q.employee_no, user_name: q.user_name, message: err.message });
+        }
       }
+    });
 
-      try {
-        db.run('DELETE FROM self_question WHERE batch_id = ? AND user_id = ?', [batchId, q.user_id]);
-        db.run(
-          `INSERT INTO self_question (batch_id, user_id,
-           content_1, content_2, content_3, content_4, content_5,
-           content_6, content_7, content_8, content_9, content_10,
-           weight_1, weight_2, weight_3, weight_4, weight_5,
-           weight_6, weight_7, weight_8, weight_9, weight_10,
-           comp_content_1, comp_content_2, comp_content_3, comp_content_4, comp_content_5,
-           comp_weight_1, comp_weight_2, comp_weight_3, comp_weight_4, comp_weight_5)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [batchId, q.user_id,
-           d.content_1 ?? null, d.content_2 ?? null, d.content_3 ?? null,
-           d.content_4 ?? null, d.content_5 ?? null, d.content_6 ?? null,
-           d.content_7 ?? null, d.content_8 ?? null, d.content_9 ?? null,
-           d.content_10 ?? null,
-           d.weight_1 ?? null, d.weight_2 ?? null, d.weight_3 ?? null,
-           d.weight_4 ?? null, d.weight_5 ?? null, d.weight_6 ?? null,
-           d.weight_7 ?? null, d.weight_8 ?? null, d.weight_9 ?? null,
-           d.weight_10 ?? null,
-           d.comp_content_1 ?? null, d.comp_content_2 ?? null, d.comp_content_3 ?? null,
-           d.comp_content_4 ?? null, d.comp_content_5 ?? null,
-           d.comp_weight_1 ?? null, d.comp_weight_2 ?? null, d.comp_weight_3 ?? null,
-           d.comp_weight_4 ?? null, d.comp_weight_5 ?? null]
-        );
-        success++;
-      } catch (err: any) {
-        errors.push({
-          row: q.row,
-          employee_no: q.employee_no,
-          user_name: q.user_name,
-          message: err.message,
-        });
-      }
-    }
-
-    saveDb();
     return { success, errors };
   },
 
-  deleteByBatchId(batchId: number): void {
-    getDb().run('DELETE FROM self_question WHERE batch_id = ?', [batchId]);
-    saveDb();
+  deleteByBatchId(batchId: number): Promise<void> {
+    return execute('DELETE FROM self_question WHERE batch_id = ?', [batchId]);
   },
 };

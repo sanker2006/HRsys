@@ -22,8 +22,7 @@ router.get('/', async (ctx: Context) => {
   if (target_id) filters.target_id = parseInt(target_id);
   if (eval_type) filters.eval_type = eval_type;
   if (status) filters.status = status;
-
-  const { list, total } = RelationModel.findByBatchPage(parseInt(batch_id), filters, p, ps);
+  const { list, total } = await RelationModel.findByBatchPage(parseInt(batch_id), filters, p, ps);
   success(ctx, { list, total, page: p, pageSize: ps });
 });
 
@@ -31,7 +30,7 @@ router.get('/my', async (ctx: Context) => {
   const { batch_id } = ctx.query as any;
   const userId = (ctx.state as any).userId;
   if (!batch_id) return fail(ctx, '缺少 batch_id');
-  const list = RelationModel.findByEvaluator(parseInt(batch_id), userId);
+  const list = await RelationModel.findByEvaluator(parseInt(batch_id), userId);
   const grouped: Record<string, typeof list> = {};
   for (const r of list) {
     const key = r.eval_type;
@@ -43,13 +42,13 @@ router.get('/my', async (ctx: Context) => {
 
 router.post('/generate/:batchId', admin, async (ctx: Context) => {
   const batchId = parseInt(ctx.params.batchId);
-  const batch = BatchModel.findById(batchId);
+  const batch = await BatchModel.findById(batchId);
   if (!batch) return fail(ctx, '批次不存在', -1, 404);
-  const missingQuestions = findMissingQuestionUsers(batchId);
+  const missingQuestions = await findMissingQuestionUsers(batchId);
   if (missingQuestions.length > 0) {
     return fail(ctx, '存在未录入题目的人员，无法生成评价关系', -1, 200, { missing_questions: missingQuestions });
   }
-  const result = generateRelations(batchId);
+  const result = await generateRelations(batchId);
   success(ctx, result, `生成完成，共 ${result.total} 条关系`);
 });
 
@@ -58,20 +57,20 @@ router.post('/', admin, async (ctx: Context) => {
   if (!batch_id || !evaluator_id || !target_id || !role_type || !eval_type) {
     return fail(ctx, '缺少必填字段');
   }
-  const evaluator = UserModel.findById(evaluator_id);
+  const evaluator = await UserModel.findById(evaluator_id);
   if (!evaluator) return fail(ctx, '评价人不存在', -1, 404);
-  const target = UserModel.findById(target_id);
+  const target = await UserModel.findById(target_id);
   if (!target) return fail(ctx, '被评人不存在', -1, 404);
-  const result = RelationModel.batchCreate([{ batch_id, evaluator_id, target_id, role_type, eval_type }]);
+  const result = await RelationModel.batchCreate([{ batch_id, evaluator_id, target_id, role_type, eval_type }]);
   if (result.errors.length > 0) return fail(ctx, result.errors[0].message);
   success(ctx, null, '添加成功');
 });
 
 router.delete('/:id', admin, async (ctx: Context) => {
   const id = parseInt(ctx.params.id);
-  const r = RelationModel.findById(id);
+  const r = await RelationModel.findById(id);
   if (!r) return fail(ctx, '关系不存在', -1, 404);
-  RelationModel.delete(id);
+  await RelationModel.delete(id);
   success(ctx, null, '删除成功');
 });
 
@@ -79,9 +78,9 @@ router.post('/import', admin, async (ctx: Context) => {
   const { batch_id, relations } = ctx.request.body as any;
   if (!batch_id || !Array.isArray(relations)) return fail(ctx, '缺少 batch_id 或 relations');
 
-  const processed = relations.map((r: any) => {
-    const evaluator = UserModel.findByEmployeeNo(String(r['评价人工号'] || r.evaluator_no || ''));
-    const target = UserModel.findByEmployeeNo(String(r['被评人工号'] || r.target_no || ''));
+  const processed = await Promise.all(relations.map(async (r: any) => {
+    const evaluator = await UserModel.findByEmployeeNo(String(r['评价人工号'] || r.evaluator_no || ''));
+    const target = await UserModel.findByEmployeeNo(String(r['被评人工号'] || r.target_no || ''));
     return {
       evaluator_id: evaluator?.id ?? 0,
       target_id: target?.id ?? 0,
@@ -89,7 +88,7 @@ router.post('/import', admin, async (ctx: Context) => {
       eval_type: r['关系类型'] || r.eval_type || 'peer',
       _error: !evaluator ? '评价人工号不存在' : !target ? '被评人工号不存在' : null,
     };
-  });
+  }));
 
   const errors: Array<{ row: number; message: string }> = [];
   const valid = processed.filter((r, idx) => {
@@ -97,19 +96,16 @@ router.post('/import', admin, async (ctx: Context) => {
       errors.push({ row: idx + 2, message: r._error });
       return false;
     }
-    if (!r.evaluator_id || !r.target_id) return false;
-    return true;
+    return !!r.evaluator_id && !!r.target_id;
   });
 
-  const toCreate = valid.map(r => ({
+  const result = await RelationModel.batchCreate(valid.map(r => ({
     batch_id,
     evaluator_id: r.evaluator_id,
     target_id: r.target_id,
     role_type: r.role_type,
     eval_type: r.eval_type,
-  }));
-
-  const result = RelationModel.batchCreate(toCreate);
+  })));
   success(ctx, {
     success: result.success,
     errors: [...errors, ...result.errors.map(e => ({ row: -1, message: e.message }))],
@@ -122,16 +118,16 @@ router.get('/export/:batchId', async (ctx: Context) => {
   const filters: any = {};
   if (eval_type) filters.eval_type = eval_type;
   if (status) filters.status = status;
-  const list = RelationModel.findByBatchId(batchId, filters);
+  const list = await RelationModel.findByBatchId(batchId, filters);
   const rows = list.map(r => ({
-    '评价人工号': r.evaluator_id,
-    '评价人姓名': r.evaluator_name,
-    '评价人部门': r.evaluator_department,
-    '被评人工号': r.target_id,
-    '被评人姓名': r.target_name,
-    '被评人部门': r.target_department,
-    '关系类型': r.eval_type,
-    '状态': r.status,
+    评价人工号: r.evaluator_id,
+    评价人姓名: r.evaluator_name,
+    评价人部门: r.evaluator_department,
+    被评人工号: r.target_id,
+    被评人姓名: r.target_name,
+    被评人部门: r.target_department,
+    关系类型: r.eval_type,
+    状态: r.status,
   }));
   success(ctx, rows);
 });

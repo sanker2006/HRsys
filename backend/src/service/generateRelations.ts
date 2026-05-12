@@ -27,7 +27,7 @@ type RelationInput = {
   eval_type: string;
 };
 
-function isEnabled(matrix: ReturnType<typeof EvalMatrixModel.findEnabledByBatchId>, fromRole: string, toRole: string, evalType: string): boolean {
+function isEnabled(matrix: Awaited<ReturnType<typeof EvalMatrixModel.findEnabledByBatchId>>, fromRole: string, toRole: string, evalType: string): boolean {
   if (matrix.length === 0) return true;
   return matrix.some(row => row.from_role === fromRole && row.to_role === toRole && row.eval_type === evalType);
 }
@@ -42,14 +42,14 @@ function addRelation(rows: RelationInput[], batchId: number, evaluator: any, tar
   });
 }
 
-export function generateRelations(batchId: number): GenResult {
-  RelationModel.deleteByBatchId(batchId);
+export async function generateRelations(batchId: number): Promise<GenResult> {
+  await RelationModel.deleteByBatchId(batchId);
 
-  const matrix = EvalMatrixModel.findEnabledByBatchId(batchId);
-  const batch = BatchModel.findById(batchId);
+  const matrix = await EvalMatrixModel.findEnabledByBatchId(batchId);
+  const batch = await BatchModel.findById(batchId);
   const peerCrossDept = batch?.peer_cross_dept === 1;
 
-  const users = UserModel.findAll({ status: 'active' }).filter(u => !u.is_admin);
+  const users = (await UserModel.findAll({ status: 'active' })).filter(u => !u.is_admin);
   const mainLeaders = users.filter(u => u.level === 'main_leader');
   const divisionLeaders = users.filter(u => u.level === 'division_leader');
   const managers = users.filter(u => u.level === 'manager');
@@ -131,8 +131,8 @@ export function generateRelations(batchId: number): GenResult {
     }
   }
 
-  const result = RelationModel.batchCreate(relations);
-  const created = RelationModel.findByBatchId(batchId);
+  const result = await RelationModel.batchCreate(relations);
+  const created = await RelationModel.findByBatchId(batchId);
   return {
     total: result.success,
     self: created.filter(r => r.eval_type === 'self').length,
@@ -141,10 +141,10 @@ export function generateRelations(batchId: number): GenResult {
   };
 }
 
-export function findMissingQuestionUsers(batchId: number): MissingQuestionUser[] {
-  const questionRows = SelfQuestionModel.toExportFormat(SelfQuestionModel.findByBatchId(batchId));
+export async function findMissingQuestionUsers(batchId: number): Promise<MissingQuestionUser[]> {
+  const questionRows = SelfQuestionModel.toExportFormat(await SelfQuestionModel.findByBatchId(batchId));
   const byUser = new Map(questionRows.map(row => [row.user_id, row]));
-  const users = UserModel.findAll({ status: 'active' })
+  const users = (await UserModel.findAll({ status: 'active' }))
     .filter(u => !u.is_admin && ['manager', 'staff'].includes(u.level));
 
   return users

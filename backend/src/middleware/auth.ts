@@ -18,7 +18,7 @@ export const auth: Middleware = async (ctx, next) => {
   ctx.state.userId = (payload as any).userId;
   ctx.state.isAdmin = (payload as any).isAdmin === 1;
   if (!ctx.state.isAdmin) {
-    const user = UserModel.findById(ctx.state.userId);
+    const user = await UserModel.findById(ctx.state.userId);
     if (!user || user.status !== 'active') return fail(ctx, '账号已停用，请联系管理员', -1, 403);
   }
   await next();

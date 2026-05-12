@@ -1,5 +1,4 @@
-import { getDb, saveDb } from '../db/index.js';
-import { queryAll, queryOne } from '../db/query.js';
+import { execute, queryAll, queryOne } from '../db/query.js';
 
 export interface BatchRow {
   id: number;
@@ -31,34 +30,32 @@ function hasStarted(batch: Pick<BatchRow, 'start_time'>, now = new Date()): bool
   return !start || now.getTime() >= start.getTime();
 }
 
-function closeExpiredBatch(batch: BatchRow | undefined): BatchRow | undefined {
+async function closeExpiredBatch(batch: BatchRow | undefined): Promise<BatchRow | undefined> {
   if (!batch) return batch;
   if (batch.status !== 'closed' && isExpired(batch)) {
-    getDb().run("UPDATE batch SET status = 'closed', updated_at = datetime('now') WHERE id = ?", [batch.id]);
-    saveDb();
+    await execute("UPDATE batch SET status = 'closed', updated_at = datetime('now') WHERE id = ?", [batch.id]);
     return { ...batch, status: 'closed' };
   }
   return batch;
 }
 
-function closeAllExpired(): void {
-  const rows = queryAll<BatchRow>("SELECT * FROM batch WHERE status != 'closed'");
+async function closeAllExpired(): Promise<void> {
+  const rows = await queryAll<BatchRow>("SELECT * FROM batch WHERE status != 'closed'");
   const expiredIds = rows.filter(row => isExpired(row)).map(row => row.id);
   if (expiredIds.length === 0) return;
   const placeholders = expiredIds.map(() => '?').join(',');
-  getDb().run(
+  await execute(
     `UPDATE batch SET status = 'closed', updated_at = datetime('now') WHERE id IN (${placeholders})`,
     expiredIds
   );
-  saveDb();
 }
 
 export const BatchModel = {
   isExpired,
   hasStarted,
 
-  assertAcceptingSubmissions(batchId: number): { ok: boolean; message?: string; batch?: BatchRow } {
-    const batch = this.findById(batchId);
+  async assertAcceptingSubmissions(batchId: number): Promise<{ ok: boolean; message?: string; batch?: BatchRow }> {
+    const batch = await this.findById(batchId);
     if (!batch) return { ok: false, message: '批次不存在' };
     if (batch.status === 'closed') return { ok: false, message: '批次已结束，不能提交评价' };
     if (batch.status !== 'active') return { ok: false, message: '批次未启动，不能提交评价' };
@@ -67,12 +64,12 @@ export const BatchModel = {
     return { ok: true, batch };
   },
 
-  findById(id: number): BatchRow | undefined {
-    return closeExpiredBatch(queryOne<BatchRow>('SELECT * FROM batch WHERE id = ?', [id]));
+  async findById(id: number): Promise<BatchRow | undefined> {
+    return closeExpiredBatch(await queryOne<BatchRow>('SELECT * FROM batch WHERE id = ?', [id]));
   },
 
-  findAll(filters?: { status?: string; keyword?: string }): BatchRow[] {
-    closeAllExpired();
+  async findAll(filters?: { status?: string; keyword?: string }): Promise<BatchRow[]> {
+    await closeAllExpired();
     let sql = 'SELECT * FROM batch WHERE 1=1';
     const params: any[] = [];
     if (filters?.status) { sql += ' AND status = ?'; params.push(filters.status); }
@@ -81,34 +78,32 @@ export const BatchModel = {
     return queryAll<BatchRow>(sql, params);
   },
 
-  count(filters?: { status?: string }): number {
-    closeAllExpired();
+  async count(filters?: { status?: string }): Promise<number> {
+    await closeAllExpired();
     let sql = 'SELECT COUNT(*) as total FROM batch WHERE 1=1';
     const params: any[] = [];
     if (filters?.status) { sql += ' AND status = ?'; params.push(filters.status); }
-    const row = queryOne<{ total: number }>(sql, params);
-    return row?.total ?? 0;
+    const row = await queryOne<{ total: number }>(sql, params);
+    return Number(row?.total ?? 0);
   },
 
-  create(data: {
+  async create(data: {
     name: string; period?: string; start_time: string; end_time: string;
     peer_cross_dept?: number;
-  }): BatchRow {
-    const db = getDb();
-    db.run(
+  }): Promise<BatchRow> {
+    await execute(
       `INSERT INTO batch (name, period, start_time, end_time, peer_cross_dept, status) VALUES (?, ?, ?, ?, ?, 'draft')`,
       [data.name, data.period ?? '', data.start_time, data.end_time, data.peer_cross_dept ?? 0]
     );
-    saveDb();
-    const batch = queryOne<BatchRow>('SELECT * FROM batch ORDER BY id DESC LIMIT 1');
+    const batch = await queryOne<BatchRow>('SELECT * FROM batch ORDER BY id DESC LIMIT 1');
     if (!batch) throw new Error('创建批次失败');
-    return closeExpiredBatch(batch)!;
+    return (await closeExpiredBatch(batch))!;
   },
 
-  update(id: number, data: Partial<{
+  async update(id: number, data: Partial<{
     name: string; period: string; start_time: string; end_time: string;
     status: string; peer_cross_dept: number;
-  }>): void {
+  }>): Promise<void> {
     const fields: string[] = [];
     const params: any[] = [];
     if (data.name !== undefined) { fields.push('name = ?'); params.push(data.name); }
@@ -120,29 +115,27 @@ export const BatchModel = {
     if (fields.length === 0) return;
     fields.push("updated_at = datetime('now')");
     params.push(id);
-    getDb().run(`UPDATE batch SET ${fields.join(', ')} WHERE id = ?`, params);
-    saveDb();
-    closeExpiredBatch(queryOne<BatchRow>('SELECT * FROM batch WHERE id = ?', [id]));
+    await execute(`UPDATE batch SET ${fields.join(', ')} WHERE id = ?`, params);
+    await closeExpiredBatch(await queryOne<BatchRow>('SELECT * FROM batch WHERE id = ?', [id]));
   },
 
-  delete(id: number): void {
-    getDb().run('DELETE FROM batch WHERE id = ?', [id]);
-    saveDb();
+  delete(id: number): Promise<void> {
+    return execute('DELETE FROM batch WHERE id = ?', [id]);
   },
 
-  getParticipantCount(batchId: number): number {
-    const row = queryOne<{ total: number }>(
+  async getParticipantCount(batchId: number): Promise<number> {
+    const row = await queryOne<{ total: number }>(
       `SELECT COUNT(DISTINCT evaluator_id) as total FROM relation WHERE batch_id = ?`,
       [batchId]
     );
-    return row?.total ?? 0;
+    return Number(row?.total ?? 0);
   },
 
-  getCompletedCount(batchId: number): number {
-    const row = queryOne<{ total: number }>(
+  async getCompletedCount(batchId: number): Promise<number> {
+    const row = await queryOne<{ total: number }>(
       `SELECT COUNT(*) as total FROM relation WHERE batch_id = ? AND status = 'completed'`,
       [batchId]
     );
-    return row?.total ?? 0;
+    return Number(row?.total ?? 0);
   },
 };
