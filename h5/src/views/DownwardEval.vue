@@ -17,7 +17,6 @@
     </section>
 
     <section v-if="quota && !isLeaderRelation" class="quota-note">
-      <div class="quota-title">当前部门分档</div>
       <div class="quota-grid">
         <div class="quota-card high">
           <span>81-100</span>
@@ -280,10 +279,10 @@ watch(() => props.relationId, loadPage)
   background:
     radial-gradient(circle at 100% 12%, rgba(3, 100, 134, .10), transparent 34%),
     var(--hr-bg);
-  padding-top: 154px;
+  padding-top: 210px;
   padding-bottom: calc(108px + env(safe-area-inset-bottom, 0px));
 }
-.page.has-quota { padding-top: 314px; }
+.page.has-quota { padding-top: 210px; }
 .nav {
   position: fixed;
   top: 0;
@@ -336,19 +335,13 @@ watch(() => props.relationId, loadPage)
 .dock-score b { display: block; margin-top: 3px; font-size: 24px; line-height: 1; font-weight: 900; font-variant-numeric: tabular-nums; }
 .dock-score span { display: block; font-size: 11px; color: rgba(255,255,255,.78); font-weight: 800; }
 .quota-note {
-  position: fixed;
-  top: 170px;
-  left: 0;
-  right: 0;
-  z-index: 54;
-  margin: 0;
+  margin: 16px 14px 0;
   padding: 14px;
-  border-radius: 0 0 22px 22px;
+  border-radius: 18px;
   background: linear-gradient(180deg, rgba(243,248,251,.98), rgba(220,232,242,.98));
-  border-bottom: 1px solid #aebfd0;
+  border: 1px solid #aebfd0;
   box-shadow: 0 12px 26px rgba(8, 31, 49, .13);
 }
-.quota-title { font-size: 15px; font-weight: 900; color: var(--hr-text); margin: 0 2px 10px; }
 .quota-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .quota-grid div { border-radius: 13px; padding: 10px; border: 1px solid rgba(201,215,229,.9); }
 .quota-card.high { background: linear-gradient(180deg, #e6f4ee, #d5eadf); border-color: #9fd4b8; }
@@ -415,4 +408,11 @@ watch(() => props.relationId, loadPage)
 .secondary { color: var(--hr-accent-strong) !important; border: 1px solid #8eb9d4 !important; background: #dbeafe !important; }
 .ghost { color: var(--hr-text) !important; border: 1px solid #b8c9da !important; background: var(--hr-surface-strong) !important; }
 .primary { color: #fff !important; background: #036486 !important; border: 1px solid #036486 !important; box-shadow: 0 10px 22px rgba(3,100,134,.30); }
+
+@media (max-width: 380px) {
+  .quota-note { margin-inline: 10px; padding: 12px; }
+  .quota-grid { gap: 6px; }
+  .quota-grid div { padding: 8px; }
+  .quota-grid b { font-size: 18px; }
+}
 </style>
