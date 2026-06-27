@@ -74,7 +74,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { selfQuestionApi } from '../api'
+import { selfQuestionApi, userApi } from '../api'
 
 const props = defineProps<{ batchId: string }>()
 const loading = ref(false)
@@ -97,21 +97,33 @@ function csvEscape(value: string | number) {
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
 }
 
-function downloadTemplate() {
+async function downloadTemplate() {
   const headers = ['姓名', '工号']
   for (let i = 1; i <= 10; i++) headers.push(`业绩题${i}`, `业绩分值${i}`)
   for (let i = 1; i <= 5; i++) headers.push(`综合题${i}`, `综合分值${i}`)
-  const row = ['张三', 'EMP001']
-  row.push('工作目标完成质量', '35', '重点任务推进成效', '35')
-  for (let i = 3; i <= 10; i++) row.push('', '')
-  row.push('协作沟通', '10', '责任意识', '10', '学习改进', '10')
-  for (let i = 4; i <= 5; i++) row.push('', '')
-  const csv = [headers, row].map(line => line.map(csvEscape).join(',')).join('\n')
+
+  const res: any = await userApi.export({ status: 'active' })
+  const users = (res.data || [])
+    .filter((user: any) => ['manager', 'staff'].includes(user.level) && !Number(user.is_admin || 0))
+    .sort((a: any, b: any) => String(a.employee_no || '').localeCompare(String(b.employee_no || ''), 'zh-Hans-CN'))
+
+  if (users.length === 0) {
+    ElMessage.warning('暂无可导出的启用员工')
+    return
+  }
+
+  const blankQuestionCells = Array.from({ length: headers.length - 2 }, () => '')
+  const rows = users.map((user: any) => [
+    user.name || '',
+    user.employee_no || '',
+    ...blankQuestionCells,
+  ])
+  const csv = [headers, ...rows].map(line => line.map(csvEscape).join(',')).join('\n')
   const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = '自评题目导入模板.csv'
+  a.download = '自评题目导入模板-启用员工.csv'
   a.click()
   URL.revokeObjectURL(url)
 }
