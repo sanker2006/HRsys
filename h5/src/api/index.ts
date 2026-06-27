@@ -38,3 +38,21 @@ export const h5Api = {
     return api.get(`/answer/progress/${batchId}`)
   },
 }
+
+export const internH5Api = {
+  login(phone: string, idCardTail: string) {
+    return api.post('/intern-auth/login', { phone, idCardTail })
+  },
+  me() {
+    return api.get('/intern/me')
+  },
+  punch(data: { latitude?: number | null; longitude?: number | null; accuracy?: number | null; photoBase64?: string | null }) {
+    return api.post('/intern/attendance/punch', data)
+  },
+  month(month: string) {
+    return api.get('/intern/attendance/month', { params: { month } })
+  },
+  year(year: string) {
+    return api.get('/intern/attendance/year', { params: { year } })
+  },
+}

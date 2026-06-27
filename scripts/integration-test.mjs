@@ -1,24 +1,27 @@
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
+import mysql from 'mysql2/promise';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const backendDir = resolve(root, 'backend');
-const dbPath = resolve(root, 'data', `hrsys-test-${Date.now()}.db`);
+const testDbName = `hrsys_test_${Date.now()}`;
+const mysqlAdminUrl = process.env.MYSQL_ADMIN_URL || 'mysql://root:root@127.0.0.1:13306/mysql';
+const databaseUrl = `mysql://hrsys:hrsys@127.0.0.1:13306/${testDbName}`;
 const port = 4017;
 const base = `http://127.0.0.1:${port}/api/v1`;
 
-mkdirSync(dirname(dbPath), { recursive: true });
-if (existsSync(dbPath)) rmSync(dbPath);
+const adminPool = mysql.createPool({ uri: mysqlAdminUrl, connectionLimit: 1, multipleStatements: true });
+await adminPool.query(`CREATE DATABASE \`${testDbName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+await adminPool.query(`GRANT ALL PRIVILEGES ON \`${testDbName}\`.* TO 'hrsys'@'%'`);
 
 const server = spawn(process.execPath, ['dist/main.js'], {
   cwd: backendDir,
   env: {
     ...process.env,
     PORT: String(port),
-    DB_PATH: dbPath,
+    DATABASE_URL: databaseUrl,
     CORS_ORIGINS: '*',
     NODE_ENV: 'test',
   },
@@ -484,7 +487,7 @@ async function main() {
 
   console.log(JSON.stringify({
     passed: true,
-    dbPath,
+    database: testDbName,
     assertions: {
       users: users.length,
       relations: relations.length,
@@ -509,6 +512,8 @@ async function main() {
 main().finally(async () => {
   server.kill();
   await sleep(200);
+  await adminPool.query(`DROP DATABASE IF EXISTS \`${testDbName}\``);
+  await adminPool.end();
 }).catch(err => {
   server.kill();
   console.error(err);

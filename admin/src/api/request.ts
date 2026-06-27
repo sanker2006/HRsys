@@ -2,6 +2,7 @@ import axios from 'axios'
 import { ElMessage } from 'element-plus'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1'
+const PUBLIC_BASE = import.meta.env.BASE_URL || '/'
 
 const api = axios.create({
   baseURL: BASE_URL,
@@ -34,7 +35,7 @@ api.interceptors.response.use(
   err => {
     if (err.response?.status === 401) {
       localStorage.removeItem('admin_token')
-      location.href = '/login'
+      location.href = `${PUBLIC_BASE}login`
     }
     const msg = err.response?.data?.message || err.message || '网络错误'
     ElMessage.error(msg)

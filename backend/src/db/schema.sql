@@ -150,6 +150,53 @@ CREATE TABLE IF NOT EXISTS log (
     FOREIGN KEY (user_id) REFERENCES app_user(id) ON DELETE SET NULL
 );
 
+CREATE TABLE IF NOT EXISTS intern_user (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    intern_no    TEXT    NOT NULL UNIQUE,
+    name         TEXT    NOT NULL,
+    phone        TEXT    NOT NULL,
+    id_card_tail TEXT    NOT NULL,
+    department   TEXT    NOT NULL DEFAULT '',
+    position     TEXT    NOT NULL DEFAULT '',
+    mentor       TEXT    NOT NULL DEFAULT '',
+    start_date   TEXT    NOT NULL,
+    end_date     TEXT    NOT NULL,
+    status       TEXT    NOT NULL DEFAULT 'active',
+    created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+    updated_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(phone, id_card_tail)
+);
+
+CREATE TABLE IF NOT EXISTS intern_attendance_record (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    intern_id    INTEGER NOT NULL,
+    punch_time   TEXT    NOT NULL DEFAULT (datetime('now')),
+    punch_date   TEXT    NOT NULL,
+    latitude     REAL,
+    longitude    REAL,
+    accuracy     REAL,
+    photo_data   BLOB,
+    photo_mime   TEXT,
+    evidence_type TEXT   NOT NULL,
+    source       TEXT    NOT NULL DEFAULT 'intern',
+    created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (intern_id) REFERENCES intern_user(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS intern_attendance_adjustment (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    intern_id    INTEGER NOT NULL,
+    record_id    INTEGER,
+    target_date  TEXT    NOT NULL,
+    action       TEXT    NOT NULL,
+    reason       TEXT    NOT NULL,
+    admin_id     INTEGER,
+    created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (intern_id) REFERENCES intern_user(id) ON DELETE CASCADE,
+    FOREIGN KEY (record_id) REFERENCES intern_attendance_record(id) ON DELETE SET NULL,
+    FOREIGN KEY (admin_id) REFERENCES app_user(id) ON DELETE SET NULL
+);
+
 -- 索引
 CREATE INDEX IF NOT EXISTS idx_relation_batch_evaluator ON relation(batch_id, evaluator_id);
 CREATE INDEX IF NOT EXISTS idx_relation_batch_evaluator_type ON relation(batch_id, evaluator_id, eval_type);
@@ -167,3 +214,9 @@ CREATE INDEX IF NOT EXISTS idx_app_user_employee_no ON app_user(employee_no);
 CREATE INDEX IF NOT EXISTS idx_department_sort_id ON department(sort_order, id);
 CREATE INDEX IF NOT EXISTS idx_log_user ON log(user_id);
 CREATE INDEX IF NOT EXISTS idx_log_created ON log(created_at);
+CREATE INDEX IF NOT EXISTS idx_intern_user_status_department ON intern_user(status, department);
+CREATE INDEX IF NOT EXISTS idx_intern_user_phone_tail ON intern_user(phone, id_card_tail);
+CREATE INDEX IF NOT EXISTS idx_intern_attendance_intern_date ON intern_attendance_record(intern_id, punch_date);
+CREATE INDEX IF NOT EXISTS idx_intern_attendance_date ON intern_attendance_record(punch_date);
+CREATE INDEX IF NOT EXISTS idx_intern_adjustment_intern_date ON intern_attendance_adjustment(intern_id, target_date);
+CREATE INDEX IF NOT EXISTS idx_intern_adjustment_record ON intern_attendance_adjustment(record_id);

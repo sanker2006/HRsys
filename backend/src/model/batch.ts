@@ -21,6 +21,10 @@ function parseDateTime(value: string): Date | null {
 
 function isExpired(batch: Pick<BatchRow, 'end_time' | 'status'>, now = new Date()): boolean {
   if (batch.status === 'closed') return true;
+  return isPastEndTime(batch, now);
+}
+
+function isPastEndTime(batch: Pick<BatchRow, 'end_time'>, now = new Date()): boolean {
   const end = parseDateTime(batch.end_time);
   return !!end && now.getTime() >= end.getTime();
 }
@@ -52,6 +56,7 @@ async function closeAllExpired(): Promise<void> {
 
 export const BatchModel = {
   isExpired,
+  isPastEndTime,
   hasStarted,
 
   async assertAcceptingSubmissions(batchId: number): Promise<{ ok: boolean; message?: string; batch?: BatchRow }> {

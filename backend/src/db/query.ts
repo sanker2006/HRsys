@@ -1,7 +1,7 @@
-import { getDriver, getSqlJsDb, getPgPool, type DbDriver } from './index.js';
-import type { PoolClient } from 'pg';
+import type mysql from 'mysql2/promise';
+import { getDriver, getMysqlPool, type DbDriver } from './index.js';
 
-export type SqlParam = string | number | boolean | null | Uint8Array;
+export type SqlParam = string | number | boolean | null | Uint8Array | Buffer;
 export type DbExecutor = {
   queryAll<T>(sql: string, params?: SqlParam[]): Promise<T[]>;
   queryOne<T>(sql: string, params?: SqlParam[]): Promise<T | undefined>;
@@ -9,48 +9,40 @@ export type DbExecutor = {
 };
 
 function normalizeParams(params: SqlParam[]): any[] {
-  return params.map(value => typeof value === 'boolean' ? (value ? 1 : 0) : value);
+  return params.map(value => {
+    if (typeof value === 'boolean') return value ? 1 : 0;
+    if (value instanceof Uint8Array && !Buffer.isBuffer(value)) return Buffer.from(value);
+    return value;
+  });
 }
 
-function toPostgresSql(sql: string): string {
-  let index = 0;
+function toMysqlSql(sql: string): string {
   return sql
-    .replace(/\?/g, () => `$${++index}`)
     .replace(/datetime\('now'\)/gi, 'CURRENT_TIMESTAMP')
-    .replace(/INSERT OR IGNORE/gi, 'INSERT')
-    .replace(/ORDER BY id DESC LIMIT 1/gi, 'ORDER BY id DESC LIMIT 1');
+    .replace(/INSERT OR IGNORE/gi, 'INSERT IGNORE')
+    .replace(/ORDER BY question_seq NULLS FIRST/gi, 'ORDER BY question_seq IS NOT NULL, question_seq')
+    .replace(/ORDER BY relation_id, question_seq NULLS FIRST/gi, 'ORDER BY relation_id, question_seq IS NOT NULL, question_seq');
 }
 
-function sqlJsQueryAll<T>(sql: string, params: SqlParam[] = []): T[] {
-  const stmt = getSqlJsDb().prepare(sql);
-  const results: T[] = [];
-  try {
-    stmt.bind(normalizeParams(params));
-    while (stmt.step()) results.push(stmt.getAsObject() as T);
-    return results;
-  } finally {
-    stmt.free();
-  }
+async function mysqlQueryAll<T>(
+  sql: string,
+  params: SqlParam[] = [],
+  runner: mysql.Pool | mysql.PoolConnection = getMysqlPool()
+): Promise<T[]> {
+  const [rows] = await runner.query(toMysqlSql(sql), normalizeParams(params));
+  return rows as T[];
 }
 
-function sqlJsExecute(sql: string, params: SqlParam[] = []): void {
-  getSqlJsDb().run(sql, normalizeParams(params));
-}
-
-async function pgQueryAll<T>(sql: string, params: SqlParam[] = [], client?: PoolClient): Promise<T[]> {
-  const runner = client ?? getPgPool();
-  const result = await runner.query(toPostgresSql(sql), normalizeParams(params));
-  return result.rows as T[];
-}
-
-async function pgExecute(sql: string, params: SqlParam[] = [], client?: PoolClient): Promise<void> {
-  const runner = client ?? getPgPool();
-  await runner.query(toPostgresSql(sql), normalizeParams(params));
+async function mysqlExecute(
+  sql: string,
+  params: SqlParam[] = [],
+  runner: mysql.Pool | mysql.PoolConnection = getMysqlPool()
+): Promise<void> {
+  await runner.execute(toMysqlSql(sql), normalizeParams(params));
 }
 
 export async function queryAll<T>(sql: string, params: SqlParam[] = []): Promise<T[]> {
-  if (getDriver() === 'postgres') return pgQueryAll<T>(sql, params);
-  return sqlJsQueryAll<T>(sql, params);
+  return mysqlQueryAll<T>(sql, params);
 }
 
 export async function queryOne<T>(sql: string, params: SqlParam[] = []): Promise<T | undefined> {
@@ -59,45 +51,26 @@ export async function queryOne<T>(sql: string, params: SqlParam[] = []): Promise
 }
 
 export async function execute(sql: string, params: SqlParam[] = []): Promise<void> {
-  if (getDriver() === 'postgres') return pgExecute(sql, params);
-  return sqlJsExecute(sql, params);
+  await mysqlExecute(sql, params);
 }
 
 export async function transaction<T>(fn: (tx: DbExecutor) => Promise<T>): Promise<T> {
-  if (getDriver() === 'postgres') {
-    const client = await getPgPool().connect();
-    try {
-      await client.query('BEGIN');
-      const tx: DbExecutor = {
-        queryAll: <R>(sql: string, params: SqlParam[] = []) => pgQueryAll<R>(sql, params, client),
-        queryOne: async <R>(sql: string, params: SqlParam[] = []) => (await pgQueryAll<R>(sql, params, client))[0],
-        execute: (sql: string, params: SqlParam[] = []) => pgExecute(sql, params, client),
-      };
-      const result = await fn(tx);
-      await client.query('COMMIT');
-      return result;
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
-  }
-
-  const db = getSqlJsDb();
+  const connection = await getMysqlPool().getConnection();
   try {
-    db.run('BEGIN');
+    await connection.beginTransaction();
     const tx: DbExecutor = {
-      queryAll: async <R>(sql: string, params: SqlParam[] = []) => sqlJsQueryAll<R>(sql, params),
-      queryOne: async <R>(sql: string, params: SqlParam[] = []) => sqlJsQueryAll<R>(sql, params)[0],
-      execute: async (sql: string, params: SqlParam[] = []) => sqlJsExecute(sql, params),
+      queryAll: <R>(sql: string, params: SqlParam[] = []) => mysqlQueryAll<R>(sql, params, connection),
+      queryOne: async <R>(sql: string, params: SqlParam[] = []) => (await mysqlQueryAll<R>(sql, params, connection))[0],
+      execute: (sql: string, params: SqlParam[] = []) => mysqlExecute(sql, params, connection),
     };
     const result = await fn(tx);
-    db.run('COMMIT');
+    await connection.commit();
     return result;
   } catch (err) {
-    try { db.run('ROLLBACK'); } catch {}
+    try { await connection.rollback(); } catch {}
     throw err;
+  } finally {
+    connection.release();
   }
 }
 

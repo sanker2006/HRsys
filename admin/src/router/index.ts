@@ -1,7 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
       path: '/login',
@@ -24,6 +24,8 @@ const router = createRouter({
         { path: 'statistics/:batchId', name: 'Statistics', component: () => import('../views/Statistics.vue'), props: true },
         { path: 'user', name: 'User', component: () => import('../views/User.vue') },
         { path: 'department', name: 'Department', component: () => import('../views/Department.vue') },
+        { path: 'interns', name: 'Interns', component: () => import('../views/Interns.vue') },
+        { path: 'intern-attendance', name: 'InternAttendance', component: () => import('../views/InternAttendance.vue') },
       ],
     },
   ],

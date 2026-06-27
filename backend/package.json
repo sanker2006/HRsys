@@ -8,9 +8,13 @@
     "build": "tsc",
     "start": "node dist/main.js",
     "db:init": "tsx src/tools/db-init.ts",
+    "db:init:mysql": "tsx src/tools/db-init.ts",
     "db:migrate:from-sqljs": "tsx src/tools/migrate-from-sqljs.ts",
+    "db:migrate:from-sqljs:mysql": "tsx src/tools/migrate-from-sqljs.ts",
     "db:check": "tsx src/tools/db-check.ts",
-    "pressure:postgres": "tsx src/tools/postgres-pressure.ts"
+    "db:check:mysql": "tsx src/tools/db-check.ts",
+    "pressure:mysql": "tsx src/tools/mysql-pressure.ts",
+    "test:intern-attendance": "tsx src/test/intern_attendance_test.ts"
   },
   "dependencies": {
     "@koa/cors": "^5.0.0",
@@ -21,7 +25,7 @@
     "jsonwebtoken": "^9.0.2",
     "koa": "^3.2.0",
     "koa-body": "^6.0.1",
-    "pg": "^8.20.0",
+    "mysql2": "^3.22.5",
     "sql.js": "^1.11.0",
     "zod": "^3.24.1"
   },
@@ -31,7 +35,6 @@
     "@types/koa": "^2.15.0",
     "@types/koa__router": "^12.0.4",
     "@types/node": "^22.10.5",
-    "@types/pg": "^8.20.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3"
   }

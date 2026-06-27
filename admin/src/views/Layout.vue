@@ -26,6 +26,14 @@
           <el-icon><OfficeBuilding /></el-icon>
           <span>部门管理</span>
         </el-menu-item>
+        <el-menu-item index="/interns">
+          <el-icon><User /></el-icon>
+          <span>实习生管理</span>
+        </el-menu-item>
+        <el-menu-item index="/intern-attendance">
+          <el-icon><DataAnalysis /></el-icon>
+          <span>实习生打卡</span>
+        </el-menu-item>
       </el-menu>
 
       <div class="sidebar-note">
@@ -100,6 +108,8 @@ const pageTitle = computed(() => {
     '/batch': '批次工作流',
     '/user': '人员与角色',
     '/department': '部门管理',
+    '/interns': '实习生管理',
+    '/intern-attendance': '实习生打卡',
   }
   if (route.path.startsWith('/matrix')) return '评估矩阵'
   if (route.path.startsWith('/self-question')) return '题目模板'
@@ -199,6 +209,7 @@ function handleCommand(cmd: string) {
 
 .content-shell {
   min-width: 0;
+  overflow: hidden;
 }
 
 .topbar {
@@ -250,7 +261,9 @@ function handleCommand(cmd: string) {
 .arrow { color: var(--admin-faint); }
 
 .main-content {
-  padding: 22px 28px 32px;
+  min-width: 0;
+  padding: 22px 28px 56px;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 </style>

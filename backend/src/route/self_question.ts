@@ -31,6 +31,14 @@ function pickValue(item: any, keys: string[]): any {
   return undefined;
 }
 
+function isBlankImportRow(item: any): boolean {
+  if (!item || typeof item !== 'object') return true;
+  return Object.entries(item).every(([key, value]) => {
+    if (key === '__row' || key === 'row') return true;
+    return value === undefined || value === null || String(value).trim() === '';
+  });
+}
+
 router.get('/:batchId', async (ctx: Context) => {
   const batchId = parseInt(ctx.params.batchId);
   const rows = await SelfQuestionModel.findByBatchId(batchId);
@@ -54,10 +62,15 @@ router.post('/import', admin, async (ctx: Context) => {
 
   const importErrors: Array<{ row: number; employee_no?: string; user_name?: string; message: string }> = [];
   const valid: Array<{ row: number; user_id: number; employee_no: string; user_name: string; data: any }> = [];
+  let skippedBlank = 0;
 
   for (let idx = 0; idx < items.length; idx++) {
     const item = items[idx];
     const row = Number(item.__row ?? item.row ?? idx + 2);
+    if (isBlankImportRow(item)) {
+      skippedBlank++;
+      continue;
+    }
     const employeeNo = pickString(item, ['工号', '员工号', 'employee_no', 'employeeNo']);
     const userName = pickString(item, ['姓名', 'name', 'user_name', 'userName']);
 
@@ -126,6 +139,8 @@ router.post('/import', admin, async (ctx: Context) => {
 
   success(ctx, {
     total: items.length,
+    processed: items.length - skippedBlank,
+    skipped_blank: skippedBlank,
     success: result.success,
     failed: errors.length,
     errors,

@@ -108,8 +108,6 @@
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item command="edit">编辑批次</el-dropdown-item>
-                  <el-dropdown-item command="start" v-if="row.status==='draft'">启动批次</el-dropdown-item>
-                  <el-dropdown-item command="close" v-if="row.status==='active'">结束批次</el-dropdown-item>
                   <el-dropdown-item command="delete" v-if="row.status==='draft'" class="danger-item">删除批次</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
@@ -146,6 +144,21 @@
         <el-form-item label="结束时间" required>
           <el-date-picker v-model="form.end_time" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" style="width:100%" />
         </el-form-item>
+        <el-form-item v-if="editingId" label="启用状态">
+          <div class="status-editor" :class="{ active: form.enabled }">
+            <el-switch
+              v-model="form.enabled"
+              active-text="启用"
+              inactive-text="停用"
+              inline-prompt
+              width="72"
+            />
+            <div>
+              <strong>{{ form.enabled ? '个人端可见，可提交评价' : '个人端隐藏，暂停提交评价' }}</strong>
+              <span>修改日期后仍需启用批次，个人端才会显示该考评。</span>
+            </div>
+          </div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="showDialog = false">取消</el-button>
@@ -169,7 +182,8 @@ const editingId = ref<number | null>(null)
 const currentPage = ref(1)
 const pageSize = ref(10)
 
-const form = reactive({ name: '', period: '', start_time: '', end_time: '' })
+const form = reactive({ name: '', period: '', start_time: '', end_time: '', enabled: false })
+const editingStatus = ref<string | null>(null)
 const statusText: Record<string, string> = { draft: '待配置', active: '进行中', closed: '已结束' }
 
 const paginatedList = computed(() => {
@@ -198,8 +212,9 @@ function formatDate(value: string) {
 }
 
 function resetForm() {
-  Object.assign(form, { name: '', period: '', start_time: '', end_time: '' })
+  Object.assign(form, { name: '', period: '', start_time: '', end_time: '', enabled: false })
   editingId.value = null
+  editingStatus.value = null
 }
 
 function openCreate() {
@@ -224,8 +239,22 @@ async function handleSave() {
   }
   saving.value = true
   try {
-    if (editingId.value) await batchApi.update(editingId.value, form)
-    else await batchApi.create(form)
+    const payload = {
+      name: form.name,
+      period: form.period,
+      start_time: form.start_time,
+      end_time: form.end_time,
+    }
+    if (editingId.value) {
+      await batchApi.update(editingId.value, payload)
+      if (form.enabled && editingStatus.value !== 'active') {
+        await batchApi.start(editingId.value)
+      } else if (!form.enabled && editingStatus.value === 'active') {
+        await batchApi.close(editingId.value)
+      }
+    } else {
+      await batchApi.create(payload)
+    }
     showDialog.value = false
     resetForm()
     await loadBatches()
@@ -238,18 +267,15 @@ async function handleSave() {
 async function handleCommand(cmd: string, row: any) {
   if (cmd === 'edit') {
     editingId.value = row.id
-    Object.assign(form, { name: row.name, period: row.period, start_time: row.start_time, end_time: row.end_time })
+    editingStatus.value = row.status
+    Object.assign(form, {
+      name: row.name,
+      period: row.period,
+      start_time: row.start_time,
+      end_time: row.end_time,
+      enabled: row.status === 'active',
+    })
     showDialog.value = true
-  } else if (cmd === 'start') {
-    await ElMessageBox.confirm('确认启动该批次？启动后将开始收集评价数据。', '启动批次')
-    await batchApi.start(row.id)
-    await loadBatches()
-    ElMessage.success('已启动')
-  } else if (cmd === 'close') {
-    await ElMessageBox.confirm('确认结束该批次？结束后将无法继续评价。', '结束批次')
-    await batchApi.close(row.id)
-    await loadBatches()
-    ElMessage.success('已结束')
   } else if (cmd === 'delete') {
     await ElMessageBox.confirm('确认删除该批次？', '删除批次')
     await batchApi.delete(row.id)
@@ -464,6 +490,41 @@ onMounted(loadBatches)
 
 .danger-item {
   color: var(--admin-danger) !important;
+}
+
+.status-editor {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid #d8e2ef;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #f8fafc, #eef4fb);
+}
+
+.status-editor.active {
+  border-color: #99f6e4;
+  background: linear-gradient(135deg, #ecfdf5, #f0fdfa);
+}
+
+.status-editor strong,
+.status-editor span {
+  display: block;
+}
+
+.status-editor strong {
+  color: var(--admin-text);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.status-editor span {
+  margin-top: 3px;
+  color: var(--admin-muted);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 @media (max-width: 1280px) {

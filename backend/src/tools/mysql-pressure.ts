@@ -1,16 +1,10 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import pg from 'pg';
+import mysql from 'mysql2/promise';
 
-const { Pool } = pg;
 const backendDir = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
-
-const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl) {
-  throw new Error('PostgreSQL 压测需要配置 DATABASE_URL');
-}
-
+const databaseUrl = process.env.DATABASE_URL || 'mysql://hrsys:hrsys@127.0.0.1:13306/hrsys';
 const port = Number(process.env.PRESSURE_PORT || 4027);
 const base = process.env.PRESSURE_BASE_URL || `http://127.0.0.1:${port}/api/v1`;
 const shouldStartServer = !process.env.PRESSURE_BASE_URL;
@@ -18,6 +12,7 @@ const adminAccount = process.env.ADMIN_ACCOUNT || 'admin';
 const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
 
 type Metric = {
+  name: string;
   total: number;
   concurrency: number;
   ok: number;
@@ -82,7 +77,7 @@ async function measure(
   total: number,
   concurrency: number,
   fn: (index: number) => Promise<boolean>
-): Promise<Metric & { name: string }> {
+): Promise<Metric> {
   const latencies: number[] = [];
   let cursor = 0;
   let okCount = 0;
@@ -122,15 +117,12 @@ async function measure(
 }
 
 async function getPoolStats(): Promise<Record<string, number>> {
-  const pool = new Pool({ connectionString: databaseUrl });
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 2 });
   try {
-    const result = await pool.query<{ state: string | null; count: string }>(
-      `SELECT COALESCE(state, 'unknown') AS state, COUNT(*)::int AS count
-       FROM pg_stat_activity
-       WHERE datname = current_database()
-       GROUP BY COALESCE(state, 'unknown')`
+    const [rows] = await pool.query<any[]>(
+      "SHOW STATUS WHERE Variable_name IN ('Threads_connected','Threads_running','Connections','Max_used_connections')"
     );
-    return Object.fromEntries(result.rows.map(row => [row.state || 'unknown', Number(row.count)]));
+    return Object.fromEntries(rows.map(row => [row.Variable_name, Number(row.Value)]));
   } finally {
     await pool.end();
   }
@@ -143,7 +135,6 @@ async function main(): Promise<void> {
       env: {
         ...process.env,
         PORT: String(port),
-        DB_DRIVER: 'postgres',
         DATABASE_URL: databaseUrl,
         CORS_ORIGINS: '*',
         NODE_ENV: 'pressure',
@@ -197,7 +188,7 @@ async function main(): Promise<void> {
     return res.code === 0;
   }));
 
-  if (draftRelationId && draftAnswers.length) {
+  if (batch.status === 'active' && draftRelationId && draftAnswers.length) {
     metrics.push(await measure('30 并发保存草稿', 150, 30, async () => {
       const res = await request('/answer/detail', {
         method: 'POST',
@@ -208,7 +199,7 @@ async function main(): Promise<void> {
     }));
   }
 
-  if (formalRelationId && draftAnswers.length) {
+  if (batch.status === 'active' && formalRelationId && draftAnswers.length) {
     metrics.push(await measure('10 并发正式提交评分', 50, 10, async () => {
       const res = await request('/answer/detail', {
         method: 'POST',
@@ -230,8 +221,10 @@ async function main(): Promise<void> {
     base,
     batch: { id: batch.id, name: batch.name, status: batch.status },
     h5TokenCount: h5Tokens.length,
-    formalSubmit: formalRelationId ? 'enabled' : 'skipped: set FORMAL_RELATION_ID to run destructive formal submit pressure',
-    pgPoolStats: await getPoolStats(),
+    formalSubmit: batch.status !== 'active'
+      ? 'skipped: batch is not active'
+      : formalRelationId ? 'enabled' : 'skipped: set FORMAL_RELATION_ID to run destructive formal submit pressure',
+    mysqlStatus: await getPoolStats(),
     metrics,
   }, null, 2));
 }

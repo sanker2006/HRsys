@@ -2,6 +2,7 @@ import axios from 'axios'
 import { showToast } from 'vant'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1'
+const PUBLIC_BASE = import.meta.env.BASE_URL || '/'
 
 const api = axios.create({
   baseURL: BASE_URL,
@@ -9,7 +10,9 @@ const api = axios.create({
 })
 
 api.interceptors.request.use(config => {
-  const token = localStorage.getItem('h5_token')
+  const url = String(config.url || '')
+  const tokenKey = url.startsWith('/intern') || url.startsWith('/intern-auth') ? 'intern_token' : 'h5_token'
+  const token = localStorage.getItem(tokenKey)
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
 })
@@ -26,8 +29,13 @@ api.interceptors.response.use(
   },
   err => {
     if (err.response?.status === 401) {
-      localStorage.removeItem('h5_token')
-      location.href = '/login'
+      const path = location.pathname
+      const relativePath = path.startsWith(PUBLIC_BASE)
+        ? path.slice(PUBLIC_BASE.length - 1)
+        : path
+      const tokenKey = relativePath.startsWith('/intern') ? 'intern_token' : 'h5_token'
+      localStorage.removeItem(tokenKey)
+      location.href = relativePath.startsWith('/intern') ? `${PUBLIC_BASE}intern/login` : `${PUBLIC_BASE}login`
     }
     const msg = err.response?.data?.message || err.message || '网络错误'
     showToast(msg)

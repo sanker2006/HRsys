@@ -142,19 +142,25 @@ async function handleUpload(file: File) {
   const reader = new FileReader()
   reader.onload = async (e) => {
     try {
-      const text = String(e.target?.result || '').trim()
-      const lines = text.split(/\r?\n/).filter(Boolean)
-      if (lines.length < 2) {
+      const text = String(e.target?.result || '')
+      const rawLines = text.split(/\r?\n/)
+      const headerIndex = rawLines.findIndex(line => parseCsvLine(line).some(value => value.trim() !== ''))
+      if (headerIndex < 0) {
         ElMessage.error('文件内容为空')
         return
       }
-      const headers = parseCsvLine(lines[0]).map((h, idx) => idx === 0 ? h.replace(/^\uFEFF/, '') : h)
-      const items = lines.slice(1).map((line, idx) => {
+      const headers = parseCsvLine(rawLines[headerIndex]).map((h, idx) => idx === 0 ? h.replace(/^\uFEFF/, '') : h)
+      const items = rawLines.slice(headerIndex + 1).flatMap((line, idx) => {
         const vals = parseCsvLine(line)
-        const obj: any = { __row: idx + 2 }
+        if (vals.every(value => value.trim() === '')) return []
+        const obj: any = { __row: headerIndex + idx + 2 }
         headers.forEach((h, i) => { obj[h] = vals[i] || '' })
-        return obj
+        return [obj]
       })
+      if (items.length === 0) {
+        ElMessage.error('文件没有可导入的数据行')
+        return
+      }
       const res: any = await selfQuestionApi.import(Number(props.batchId), items)
       importResult.value = res.data
       previewVisible.value = true

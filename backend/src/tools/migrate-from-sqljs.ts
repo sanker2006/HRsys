@@ -1,16 +1,10 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import initSqlJs from 'sql.js';
-import pg from 'pg';
-import { initDb } from '../db/index.js';
+import { initDb, getMysqlPool, closeDb } from '../db/index.js';
 
-const { Pool } = pg;
 const sourcePath = resolve(process.env.SQLJS_SOURCE || './data/hr360.db');
-const databaseUrl = process.env.DATABASE_URL;
 
-if (!databaseUrl) {
-  throw new Error('迁移到 PostgreSQL 必须配置 DATABASE_URL');
-}
 if (!existsSync(sourcePath)) {
   throw new Error(`找不到 sql.js 源数据库：${sourcePath}`);
 }
@@ -25,7 +19,10 @@ const tables = [
   'self_question',
   'answer',
   'log',
-];
+  'intern_user',
+  'intern_attendance_record',
+  'intern_attendance_adjustment',
+] as const;
 
 const columns: Record<string, string[]> = {
   department: ['id', 'name', 'sort_order', 'created_at', 'updated_at'],
@@ -44,31 +41,47 @@ const columns: Record<string, string[]> = {
   ],
   answer: ['id', 'relation_id', 'question_seq', 'score', 'is_total', 'is_draft', 'created_at', 'updated_at'],
   log: ['id', 'user_id', 'action', 'ip', 'detail', 'created_at'],
+  intern_user: ['id', 'intern_no', 'name', 'phone', 'id_card_tail', 'department', 'position', 'mentor', 'start_date', 'end_date', 'status', 'created_at', 'updated_at'],
+  intern_attendance_record: ['id', 'intern_id', 'punch_time', 'punch_date', 'latitude', 'longitude', 'accuracy', 'photo_data', 'photo_mime', 'evidence_type', 'source', 'created_at'],
+  intern_attendance_adjustment: ['id', 'intern_id', 'record_id', 'target_date', 'action', 'reason', 'admin_id', 'created_at'],
 };
 
 const SQL = await initSqlJs();
 const source = new SQL.Database(readFileSync(sourcePath));
 await initDb();
-const pool = new Pool({ connectionString: databaseUrl });
+
+function tableExists(table: string): boolean {
+  const result = source.exec(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = '${table}'`);
+  return !!result.length && result[0].values.length > 0;
+}
 
 function sourceRows(table: string): any[] {
+  if (!tableExists(table)) return [];
   const result = source.exec(`SELECT ${columns[table].join(', ')} FROM ${table} ORDER BY id`);
   if (!result.length) return [];
   const colNames = result[0].columns;
   return result[0].values.map(values => Object.fromEntries(colNames.map((name, index) => [name, values[index]])));
 }
 
-async function resetSequence(client: pg.PoolClient, table: string): Promise<void> {
-  await client.query(
-    `SELECT setval(pg_get_serial_sequence($1, 'id'), COALESCE((SELECT MAX(id) FROM ${table}), 1), (SELECT COUNT(*) > 0 FROM ${table}))`,
-    [table]
-  );
+function normalizeValue(value: unknown): unknown {
+  if (value instanceof Uint8Array) return Buffer.from(value);
+  return value ?? null;
 }
 
-const client = await pool.connect();
+async function resetSequence(client: any, table: string): Promise<void> {
+  const [rows] = await client.query(`SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM ${table}`);
+  const nextId = Number(rows?.[0]?.next_id || 1);
+  await client.query(`ALTER TABLE ${table} AUTO_INCREMENT = ${Math.max(nextId, 1)}`);
+}
+
+const client = await getMysqlPool().getConnection();
 try {
-  await client.query('BEGIN');
-  await client.query(`TRUNCATE ${tables.join(', ')} RESTART IDENTITY CASCADE`);
+  await client.beginTransaction();
+  await client.query('SET FOREIGN_KEY_CHECKS = 0');
+  for (const table of [...tables].reverse()) {
+    await client.query(`DELETE FROM ${table}`);
+  }
+  await client.query('SET FOREIGN_KEY_CHECKS = 1');
 
   const report: Record<string, number> = {};
   const skipped: Record<string, Array<{ id: unknown; reason: string }>> = {};
@@ -79,7 +92,29 @@ try {
     skipped[table].push({ id: row.id, reason });
   }
 
+  function isDeletedStatus(status: unknown): boolean {
+    return ['deleted', 'inactive', 'disabled', 'removed'].includes(String(status ?? '').toLowerCase());
+  }
+
   function validRows(table: string, rows: any[]): any[] {
+    if (table === 'app_user' || table === 'intern_user') {
+      return rows.filter(row => {
+        if (isDeletedStatus(row.status)) {
+          skip(table, row, `status ${row.status} is not migratable`);
+          return false;
+        }
+        return true;
+      });
+    }
+    if (table === 'batch') {
+      return rows.filter(row => {
+        if (String(row.status ?? '').toLowerCase() === 'deleted') {
+          skip(table, row, `status ${row.status} is not migratable`);
+          return false;
+        }
+        return true;
+      });
+    }
     if (table === 'division_leader_department') {
       return rows.filter(row => {
         if (!validIds.app_user.has(row.user_id)) {
@@ -89,7 +124,6 @@ try {
         return true;
       });
     }
-    if (table === 'batch') return rows;
     if (table === 'eval_matrix') {
       return rows.filter(row => {
         if (!validIds.batch.has(row.batch_id)) {
@@ -147,6 +181,32 @@ try {
         return true;
       });
     }
+    if (table === 'intern_attendance_record') {
+      return rows.filter(row => {
+        if (!validIds.intern_user.has(row.intern_id)) {
+          skip(table, row, `intern_id ${row.intern_id} 不存在`);
+          return false;
+        }
+        return true;
+      });
+    }
+    if (table === 'intern_attendance_adjustment') {
+      return rows.filter(row => {
+        if (!validIds.intern_user.has(row.intern_id)) {
+          skip(table, row, `intern_id ${row.intern_id} 不存在`);
+          return false;
+        }
+        if (row.record_id !== null && row.record_id !== undefined && !validIds.intern_attendance_record.has(row.record_id)) {
+          skip(table, row, `record_id ${row.record_id} 不存在`);
+          return false;
+        }
+        if (row.admin_id !== null && row.admin_id !== undefined && !validIds.app_user.has(row.admin_id)) {
+          skip(table, row, `admin_id ${row.admin_id} 不存在`);
+          return false;
+        }
+        return true;
+      });
+    }
     return rows;
   }
 
@@ -155,25 +215,29 @@ try {
     const rows = validRows(table, sourceTableRows);
     report[table] = rows.length;
     validIds[table] = new Set(rows.map(row => row.id));
-    if (rows.length === 0) continue;
+    if (rows.length === 0) {
+      await resetSequence(client, table);
+      continue;
+    }
     const cols = columns[table];
-    const names = cols.join(', ');
-    const placeholders = cols.map((_, index) => `$${index + 1}`).join(', ');
+    const names = cols.map(col => `\`${col}\``).join(', ');
+    const placeholders = cols.map(() => '?').join(', ');
     for (const row of rows) {
-      await client.query(
+      await client.execute(
         `INSERT INTO ${table} (${names}) VALUES (${placeholders})`,
-        cols.map(col => row[col] ?? null)
+        cols.map(col => normalizeValue(row[col])) as any[]
       );
     }
     await resetSequence(client, table);
   }
 
-  await client.query('COMMIT');
+  await client.commit();
   console.log(JSON.stringify({ ok: true, sourcePath, imported: report, skipped }, null, 2));
 } catch (err) {
-  await client.query('ROLLBACK');
+  try { await client.query('SET FOREIGN_KEY_CHECKS = 1'); } catch {}
+  try { await client.rollback(); } catch {}
   throw err;
 } finally {
   client.release();
-  await pool.end();
+  await closeDb();
 }

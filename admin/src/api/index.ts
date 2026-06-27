@@ -155,3 +155,39 @@ export const departmentApi = {
     return api.delete(`/department/${id}`)
   },
 }
+
+export const internApi = {
+  list(params?: any) {
+    return api.get('/admin/interns', { params })
+  },
+  create(data: any) {
+    return api.post('/admin/interns', data)
+  },
+  update(id: number, data: any) {
+    return api.put(`/admin/interns/${id}`, data)
+  },
+  import(interns: any[]) {
+    return api.post('/admin/interns/import', { interns })
+  },
+  records(params?: any) {
+    return api.get('/admin/intern-attendance/records', { params })
+  },
+  statistics(params?: any) {
+    return api.get('/admin/intern-attendance/statistics', { params })
+  },
+  yearStatistics(params?: any) {
+    return api.get('/admin/intern-attendance/year-statistics', { params })
+  },
+  adjust(data: any) {
+    return api.post('/admin/intern-attendance/adjustments', data)
+  },
+  export(params?: any) {
+    return api.get('/admin/intern-attendance/export', { params, responseType: 'blob' })
+  },
+  exportCalendar(params?: any) {
+    return api.get('/admin/intern-attendance/calendar-export', { params, responseType: 'blob' })
+  },
+  exportYear(params?: any) {
+    return api.get('/admin/intern-attendance/year-export', { params, responseType: 'blob' })
+  },
+}

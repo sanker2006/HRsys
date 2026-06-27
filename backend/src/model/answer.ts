@@ -1,4 +1,4 @@
-import { driver, execute, queryAll, queryOne, transaction, type DbExecutor } from '../db/query.js';
+import { execute, queryAll, queryOne, transaction, type DbExecutor } from '../db/query.js';
 
 export interface AnswerRow {
   id: number;
@@ -12,9 +12,7 @@ export interface AnswerRow {
 }
 
 async function lockRelationForWrite(tx: DbExecutor, relationId: number): Promise<void> {
-  if (driver() === 'postgres') {
-    await tx.execute('SELECT pg_advisory_xact_lock(?)', [relationId]);
-  }
+  await tx.queryOne('SELECT id FROM relation WHERE id = ? FOR UPDATE', [relationId]);
 }
 
 export const AnswerModel = {

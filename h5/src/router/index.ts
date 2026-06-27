@@ -1,12 +1,32 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
       path: '/login',
       name: 'Login',
       component: () => import('../views/Login.vue'),
+    },
+    {
+      path: '/intern/login',
+      name: 'InternLogin',
+      component: () => import('../views/InternLogin.vue'),
+    },
+    {
+      path: '/intern/home',
+      name: 'InternHome',
+      component: () => import('../views/InternHome.vue'),
+    },
+    {
+      path: '/intern/records',
+      name: 'InternRecords',
+      component: () => import('../views/InternRecords.vue'),
+    },
+    {
+      path: '/intern/calendar',
+      name: 'InternCalendar',
+      component: () => import('../views/InternCalendar.vue'),
     },
     {
       path: '/',
@@ -51,6 +71,19 @@ const router = createRouter({
 })
 
 router.beforeEach((to, _from, next) => {
+  if (to.path.startsWith('/intern')) {
+    const token = localStorage.getItem('intern_token')
+    if (!token && to.path !== '/intern/login') {
+      next('/intern/login')
+      return
+    }
+    if (to.path === '/intern/login' && token) {
+      next('/intern/home')
+      return
+    }
+    next()
+    return
+  }
   const token = localStorage.getItem('h5_token')
   if (!token && to.path !== '/login') {
     next('/login')

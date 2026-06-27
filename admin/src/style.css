@@ -222,6 +222,11 @@ button,
   color: var(--admin-text);
 }
 
+.el-table__body-wrapper,
+.el-table__header-wrapper {
+  min-width: 0;
+}
+
 .el-table th.el-table__cell {
   background-color: #f8fafc !important;
   color: #334155;
@@ -239,6 +244,12 @@ button,
 
 .el-dialog {
   border-radius: 14px !important;
+  max-width: calc(100vw - 32px);
+}
+
+.el-dialog__body {
+  max-height: calc(100vh - 190px);
+  overflow-y: auto;
 }
 
 ::-webkit-scrollbar {

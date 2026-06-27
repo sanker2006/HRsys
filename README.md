@@ -1,17 +1,24 @@
 # HRsys 绩效评价系统
 
-HRsys 是一套企业内部绩效考核与 360 评价系统，当前主线版本为 `V2.1`。项目包含后端服务、PC 管理端和移动端 H5 评分端，支持批次管理、评价矩阵、题目模板、评价关系、移动端评分、进度监控、数据统计和 Excel 导出。
+HRsys 是一套企业内部绩效评价系统，当前主线版本为 `V2.1`。项目包含后端服务、PC 管理端和移动端 H5，支持批次管理、评价矩阵、题目模板、评价关系、移动端评分、进度监控、数据统计、Excel 导出，以及独立的实习生打卡模块。
+
+## 技术栈
+
+- 后端：Node.js + Koa + TypeScript
+- 管理端：Vue 3 + Vite + Element Plus
+- 移动端：Vue 3 + Vite + Vant
+- 数据库：MySQL 8
+- 文件导出：ExcelJS
 
 ## 项目结构
 
 ```text
 HR开发2/
-├─ backend/                    后端服务，Node.js + Koa + TypeScript
-├─ admin/                      PC 管理端，Vue 3 + Element Plus + Vite
-├─ h5/                         移动端评分端，Vue 3 + Vant + Vite
-├─ scripts/                    集成测试与辅助脚本
-├─ docker-compose.postgres.yml 本机 PostgreSQL 配置
-├─ data/                       本地 sql.js 测试数据目录
+├─ backend/                 后端服务
+├─ admin/                   PC 管理端
+├─ h5/                      移动端 H5
+├─ scripts/                 集成测试脚本
+├─ docker-compose.mysql.yml 本机 MySQL 配置
 └─ README.md
 ```
 
@@ -20,14 +27,15 @@ HR开发2/
 - 管理端登录和权限校验
 - 部门管理、人员与角色管理、人员启用/停用
 - 批次工作流：评价矩阵 -> 题目模板 -> 评价关系 -> 进度监控 -> 数据统计
-- 自评题导入，支持每个员工绑定不同题目
+- 每人每批次独立题目模板，支持业绩评价和综合评价
 - 生成评价关系前校验启用人员题目完整性
 - H5 自我评价、同级互评、向下评价
 - 部门负责人向下评价分档名额校验
 - 领导按部门进入向下评价
-- 管理端进度监控、数据统计和 Excel 导出
+- 管理端数据统计和 Excel 导出
+- 独立实习生账号、移动端打卡、月度/年度统计和导出
 
-## 角色与规则
+## 角色与评价规则
 
 系统角色：
 
@@ -53,66 +61,65 @@ HR开发2/
 - 主要领导评价所有部门负责人和员工
 - 领导评价某部门负责人或该部门员工前，要求该部门负责人已完成本部门全部员工评分
 
-## 数据库
+## 实习生打卡模块
 
-V2.1 支持两种数据库驱动：
+- 管理端入口：`/interns` 实习生管理，`/intern-attendance` 实习生打卡统计
+- H5 入口：`/intern/login`
+- 登录方式：手机号 + 身份证后四位
+- 打卡证据规则：GPS 和照片至少提供一个；GPS 获取失败、拒绝或超时时，必须上传照片
+- 打卡时间以服务器时间为准，按 `Asia/Shanghai` 自然日统计
+- 一天有效打卡 2 次及以上为出勤，0 或 1 次为缺勤
+- 管理员补卡、驳回、恢复、作废均采用事件追加方式，不直接覆盖原始记录
 
-- PostgreSQL：推荐主路径，用于提升并发能力
-- sql.js：保留为本地开发回退和旧数据迁移来源
+## MySQL 本地启动
 
-### PostgreSQL 本机启动
-
-本机需要先安装 Docker Desktop，并确保命令行可使用 `docker`。
+先启动 Docker MySQL：
 
 ```bash
-docker compose -f docker-compose.postgres.yml up -d
+docker compose -f docker-compose.mysql.yml up -d
 ```
 
-复制环境变量模板：
+复制后端环境变量模板：
 
 ```bash
 copy backend\.env.example backend\.env
 ```
 
-在 `backend/.env` 中启用 PostgreSQL：
+默认数据库连接：
 
 ```env
-DB_DRIVER=postgres
-DATABASE_URL=postgres://hrsys:hrsys@127.0.0.1:15432/hrsys
-PG_POOL_MAX=20
+DATABASE_URL=mysql://hrsys:hrsys@127.0.0.1:13306/hrsys
 ```
 
 初始化 schema：
 
 ```bash
-npm --prefix backend run db:init
+npm --prefix backend run db:init:mysql
 ```
 
-从旧 sql.js 数据库迁移：
+从旧 sql.js 文件库迁移数据：
 
 ```bash
-npm --prefix backend run db:migrate:from-sqljs
+npm --prefix backend run db:migrate:from-sqljs:mysql
 ```
 
-默认迁移源是 `backend/data/hr360.db`。如需指定：
+默认迁移来源是：
+
+```text
+backend/data/hr360.db
+```
+
+如需指定来源：
 
 ```bash
 set SQLJS_SOURCE=D:\HR开发\HR开发2\backend\data\hr360.db
-npm --prefix backend run db:migrate:from-sqljs
+npm --prefix backend run db:migrate:from-sqljs:mysql
 ```
 
 迁移后校验：
 
 ```bash
-npm --prefix backend run db:check
-```
-
-### sql.js 回退
-
-不配置 `DATABASE_URL` 且不设置 `DB_DRIVER=postgres` 时，后端会继续使用 sql.js：
-
-```env
-DB_PATH=./data/hr360.db
+npm --prefix backend run db:check:mysql
 ```
 
 ## 本地启动
@@ -158,6 +165,12 @@ npm --prefix h5 run build
 npm run test:integration
 ```
 
+实习生打卡专项测试：
+
+```bash
+npm --prefix backend run test:intern-attendance
+```
+
 覆盖内容包括：
 
 - 登录、人员启停、主要领导唯一性
@@ -167,31 +180,36 @@ npm run test:integration
 - 领导评分解锁规则
 - 分档名额校验
 - 批次过期拦截
-- 统计接口和导出
-- 基础并发读写压测
+- 数据统计和导出
+- 实习生打卡、补卡、驳回、月度/年度统计和导出
 
-PostgreSQL 专项压测：
+## MySQL 压测
+
+先构建后端：
 
 ```bash
-set DB_DRIVER=postgres
-set DATABASE_URL=postgres://hrsys:hrsys@127.0.0.1:15432/hrsys
 npm --prefix backend run build
-npm --prefix backend run pressure:postgres
 ```
 
-压测会输出总请求数、RPS、p50/p95/p99、错误数和 PostgreSQL 连接状态。默认执行读接口、草稿写入、进度/统计刷新。正式提交会改变业务数据，默认跳过；如需压测正式提交，指定一个可提交的关系：
+运行压测：
+
+```bash
+npm --prefix backend run pressure:mysql
+```
+
+压测会输出总请求数、RPS、p50/p95/p99、错误数和 MySQL 连接状态。默认执行读接口、草稿写入、进度/统计刷新。正式提交会改变业务数据，默认跳过；如需压测正式提交，指定一个可提交关系：
 
 ```bash
 set FORMAL_RELATION_ID=123
-npm --prefix backend run pressure:postgres
+npm --prefix backend run pressure:mysql
 ```
 
 ## 生产建议
 
-- 正式环境使用 PostgreSQL，不建议继续使用 sql.js 文件库
+- 正式环境使用独立 MySQL 实例，不建议依赖本机 Docker 数据卷
 - 设置强随机 `JWT_SECRET`
-- 根据机器 CPU、内存和 PostgreSQL 配置调整 `PG_POOL_MAX`
-- 前端静态资源建议放到独立静态服务或 CDN
+- 根据机器 CPU、内存和 MySQL 配置调整 `MYSQL_POOL_MAX`
+- 前端静态资源建议部署到独立静态服务或 CDN
 - 后端部署在稳定有线网络或云主机，不建议依赖家用无线网络公网穿透
 
 ## Git 信息
