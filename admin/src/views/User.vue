@@ -6,6 +6,7 @@
         <p>维护员工、部门负责人、分管领导和主要领导，并配置分管领导负责部门。</p>
       </div>
       <div class="hero-actions">
+        <el-button @click="downloadImportTemplate">下载导入模板</el-button>
         <el-upload action="" :before-upload="handleImport" accept=".csv" :show-file-list="false">
           <el-button>批量导入</el-button>
         </el-upload>
@@ -143,6 +144,25 @@
         <el-button type="primary" @click="handleSave" :loading="saving">保存</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="importResultVisible" title="人员导入结果" width="720px">
+      <el-alert
+        v-if="importResult"
+        :type="importResult.failed > 0 ? 'warning' : 'success'"
+        :closable="false"
+        class="import-summary"
+      >
+        共 {{ importResult.total }} 行，成功 {{ importResult.success }} 行，失败 {{ importResult.failed }} 行
+      </el-alert>
+      <el-table v-if="importResult?.errors?.length" :data="importResult.errors" max-height="360" border>
+        <el-table-column prop="row" label="表格行号" width="100" />
+        <el-table-column prop="message" label="错误原因" min-width="420" />
+      </el-table>
+      <el-empty v-else description="本次导入全部成功" />
+      <template #footer>
+        <el-button type="primary" @click="importResultVisible = false">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -150,6 +170,8 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { departmentApi, userApi } from '../api'
+import { parseCsvBuffer } from '../utils/csv'
+import { buildUserImportTemplate, removeUnchangedExampleRows } from '../utils/userImportTemplate'
 
 const users = ref<any[]>([])
 const allUsers = ref<any[]>([])
@@ -158,6 +180,8 @@ const departments = ref<string[]>([])
 const loading = ref(false)
 const saving = ref(false)
 const showDialog = ref(false)
+const importResultVisible = ref(false)
+const importResult = ref<any>(null)
 const editingId = ref<number | null>(null)
 const keyword = ref('')
 const filterDept = ref('')
@@ -282,32 +306,37 @@ async function handleDelete(row: any) {
   ElMessage.success('已删除')
 }
 
-function parseCsvLine(line: string) {
-  return line.split(',').map(v => v.trim())
+function downloadImportTemplate() {
+  const blob = new Blob([buildUserImportTemplate()], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = '人员批量导入模板.csv'
+  link.click()
+  URL.revokeObjectURL(url)
 }
 
 async function handleImport(file: File) {
-  const reader = new FileReader()
-  reader.onload = async (e) => {
-    try {
-      const text = String(e.target?.result || '').trim()
-      const lines = text.split(/\r?\n/).filter(Boolean)
-      const headers = parseCsvLine(lines[0]).map((h, i) => i === 0 ? h.replace(/^\uFEFF/, '') : h)
-      const items = lines.slice(1).map(line => {
-        const vals = parseCsvLine(line)
-        const obj: any = {}
-        headers.forEach((h, idx) => { obj[h] = vals[idx] || '' })
-        return obj
-      })
-      const res: any = await userApi.import(items)
-      ElMessage.success(`成功导入 ${res.data?.success || 0} 人`)
-      if (res.data?.errors?.length) ElMessage.warning(`${res.data.errors.length} 条失败，请检查数据`)
-      await Promise.all([loadUsers(), loadUserStats()])
-    } catch {
-      ElMessage.error('导入失败')
+  try {
+    const parsed = parseCsvBuffer(await file.arrayBuffer())
+    const items = removeUnchangedExampleRows(parsed.items)
+    if (items.length === 0) {
+      ElMessage.warning('模板中只有示例数据，请覆盖示例行或新增人员后再导入')
+      return false
     }
+    const res: any = await userApi.import(items)
+    const errors = res.data?.errors || []
+    importResult.value = {
+      total: items.length,
+      success: Number(res.data?.success || 0),
+      failed: errors.length,
+      errors,
+    }
+    importResultVisible.value = true
+    await Promise.all([loadUsers(), loadUserStats()])
+  } catch (err: any) {
+    ElMessage.error(err?.message || '导入失败')
   }
-  reader.readAsText(file, 'utf-8')
   return false
 }
 
@@ -328,4 +357,5 @@ onMounted(async () => {
   gap: 10px;
   margin-bottom: 14px;
 }
+.import-summary { margin-bottom: 16px; }
 </style>

@@ -6,21 +6,26 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",
     "axios": "^1.15.0",
     "element-plus": "^2.13.7",
+    "papaparse": "^5.5.4",
     "vue": "^3.5.32",
     "vue-router": "^4.6.4"
   },
   "devDependencies": {
     "@types/node": "^24.12.2",
+    "@types/papaparse": "^5.5.2",
     "@vitejs/plugin-vue": "^6.0.5",
     "@vue/tsconfig": "^0.9.1",
+    "iconv-lite": "^0.7.2",
     "typescript": "~6.0.2",
     "vite": "^8.0.4",
+    "vitest": "^4.1.9",
     "vue-tsc": "^3.2.6"
   }
 }

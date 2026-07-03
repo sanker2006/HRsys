@@ -8,13 +8,14 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const backendDir = resolve(root, 'backend');
 const testDbName = `hrsys_test_${Date.now()}`;
 const mysqlAdminUrl = process.env.MYSQL_ADMIN_URL || 'mysql://root:root@127.0.0.1:13306/mysql';
-const databaseUrl = `mysql://hrsys:hrsys@127.0.0.1:13306/${testDbName}`;
+const testDatabaseUrl = new URL(mysqlAdminUrl);
+testDatabaseUrl.pathname = `/${testDbName}`;
+const databaseUrl = testDatabaseUrl.toString();
 const port = 4017;
 const base = `http://127.0.0.1:${port}/api/v1`;
 
 const adminPool = mysql.createPool({ uri: mysqlAdminUrl, connectionLimit: 1, multipleStatements: true });
 await adminPool.query(`CREATE DATABASE \`${testDbName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
-await adminPool.query(`GRANT ALL PRIVILEGES ON \`${testDbName}\`.* TO 'hrsys'@'%'`);
 
 const server = spawn(process.execPath, ['dist/main.js'], {
   cwd: backendDir,

@@ -75,6 +75,7 @@
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { selfQuestionApi, userApi } from '../api'
+import { buildCsvText, parseCsvBuffer } from '../utils/csv'
 
 const props = defineProps<{ batchId: string }>()
 const loading = ref(false)
@@ -90,11 +91,6 @@ async function loadList() {
   } finally {
     loading.value = false
   }
-}
-
-function csvEscape(value: string | number) {
-  const text = String(value ?? '')
-  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
 }
 
 async function downloadTemplate() {
@@ -118,8 +114,7 @@ async function downloadTemplate() {
     user.employee_no || '',
     ...blankQuestionCells,
   ])
-  const csv = [headers, ...rows].map(line => line.map(csvEscape).join(',')).join('\n')
-  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+  const blob = new Blob([buildCsvText(headers, rows)], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
@@ -128,59 +123,15 @@ async function downloadTemplate() {
   URL.revokeObjectURL(url)
 }
 
-function parseCsvLine(line: string) {
-  const result: string[] = []
-  let current = ''
-  let inQuotes = false
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i]
-    if (char === '"' && line[i + 1] === '"') {
-      current += '"'
-      i++
-    } else if (char === '"') {
-      inQuotes = !inQuotes
-    } else if (char === ',' && !inQuotes) {
-      result.push(current.trim())
-      current = ''
-    } else {
-      current += char
-    }
-  }
-  result.push(current.trim())
-  return result
-}
-
 async function handleUpload(file: File) {
-  const reader = new FileReader()
-  reader.onload = async (e) => {
-    try {
-      const text = String(e.target?.result || '')
-      const rawLines = text.split(/\r?\n/)
-      const headerIndex = rawLines.findIndex(line => parseCsvLine(line).some(value => value.trim() !== ''))
-      if (headerIndex < 0) {
-        ElMessage.error('文件内容为空')
-        return
-      }
-      const headers = parseCsvLine(rawLines[headerIndex]).map((h, idx) => idx === 0 ? h.replace(/^\uFEFF/, '') : h)
-      const items = rawLines.slice(headerIndex + 1).flatMap((line, idx) => {
-        const vals = parseCsvLine(line)
-        if (vals.every(value => value.trim() === '')) return []
-        const obj: any = { __row: headerIndex + idx + 2 }
-        headers.forEach((h, i) => { obj[h] = vals[i] || '' })
-        return [obj]
-      })
-      if (items.length === 0) {
-        ElMessage.error('文件没有可导入的数据行')
-        return
-      }
-      const res: any = await selfQuestionApi.import(Number(props.batchId), items)
-      importResult.value = res.data
-      previewVisible.value = true
-    } catch (err: any) {
-      ElMessage.error(err?.message || '文件解析失败')
-    }
+  try {
+    const { items } = parseCsvBuffer(await file.arrayBuffer())
+    const res: any = await selfQuestionApi.import(Number(props.batchId), items)
+    importResult.value = res.data
+    previewVisible.value = true
+  } catch (err: any) {
+    ElMessage.error(err?.message || '文件解析失败')
   }
-  reader.readAsText(file, 'utf-8')
   return false
 }
 

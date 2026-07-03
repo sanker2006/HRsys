@@ -5,6 +5,7 @@ import { hash } from '../utils/password.js';
 import { success, fail } from '../utils/response.js';
 import { auth } from '../middleware/auth.js';
 import { admin } from '../middleware/admin.js';
+import { importRowNumber } from '../utils/import.js';
 import type { Context } from 'koa';
 
 const router = new Router({ prefix: '/api/v1/user' });
@@ -132,6 +133,7 @@ router.post('/import', async (ctx: Context) => {
   const processed = [];
   for (let idx = 0; idx < users.length; idx++) {
     const u = users[idx];
+    const sourceRow = importRowNumber(u, idx);
     const idTail = String(u['证件后四位'] || u['身份证后四位'] || u.id_card_tail || '');
     const item = {
       name: u['姓名'] || u.name || '',
@@ -144,15 +146,16 @@ router.post('/import', async (ctx: Context) => {
       password: hash(idTail || '0000'),
       status: normalizeImportedStatus(u['状态'] || u.status),
       managed_departments: parseManagedDepartments(u['负责部门'] || u.managed_departments),
+      source_row: sourceRow,
     };
     const deptError = await validateDepartmentExists(item.department);
-    if (deptError) errors.push({ row: idx + 2, message: deptError });
+    if (deptError) errors.push({ row: sourceRow, message: deptError });
     const managedError = await validateManagedDepartments(item.managed_departments);
-    if (managedError) errors.push({ row: idx + 2, message: managedError });
+    if (managedError) errors.push({ row: sourceRow, message: managedError });
     processed.push(item);
   }
   const invalidRows = new Set(errors.map(e => e.row));
-  const result = await UserModel.batchCreate(processed.filter((_, idx) => !invalidRows.has(idx + 2)));
+  const result = await UserModel.batchCreate(processed.filter(item => !invalidRows.has(item.source_row)));
   success(ctx, { ...result, errors: [...errors, ...result.errors] }, `成功导入 ${result.success} 人`);
 });
 

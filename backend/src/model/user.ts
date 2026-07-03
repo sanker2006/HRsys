@@ -234,7 +234,7 @@ export const UserModel = {
 
   async batchCreate(users: Array<{
     name: string; employee_no: string; department: string; position: string;
-    level: string; phone: string; id_card_tail: string; password: string; status?: string; managed_departments?: string[];
+    level: string; phone: string; id_card_tail: string; password: string; status?: string; managed_departments?: string[]; source_row?: number;
   }>): Promise<{ success: number; errors: Array<{ row: number; message: string }> }> {
     const errors: Array<{ row: number; message: string }> = [];
     let success = 0;
@@ -245,12 +245,12 @@ export const UserModel = {
         const level = normalizeLevel(u.level);
         const existing = await this.findByEmployeeNo(u.employee_no);
         if (existing) {
-          errors.push({ row: i + 2, message: `工号 ${u.employee_no} 已存在` });
+          errors.push({ row: u.source_row ?? i + 2, message: `工号 ${u.employee_no} 已存在` });
           continue;
         }
         const dup = await this.findByPhoneAndIdCard(u.phone, u.id_card_tail);
         if (dup) {
-          errors.push({ row: i + 2, message: `手机号 ${u.phone} + 证件后四位 ${u.id_card_tail} 已被用户「${dup.name}」使用` });
+          errors.push({ row: u.source_row ?? i + 2, message: `手机号 ${u.phone} + 证件后四位 ${u.id_card_tail} 已被用户「${dup.name}」使用` });
           continue;
         }
         await assertSingleMainLeader(level);
@@ -263,7 +263,7 @@ export const UserModel = {
         if (created && level === 'division_leader') await replaceManagedDepartments(created.id, u.managed_departments ?? []);
         success++;
       } catch (err: any) {
-        errors.push({ row: i + 2, message: err.message });
+        errors.push({ row: u.source_row ?? i + 2, message: err.message });
       }
     }
     return { success, errors };
