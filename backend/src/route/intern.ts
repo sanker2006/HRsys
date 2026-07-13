@@ -18,6 +18,18 @@ const loginSchema = z.object({
   idCardTail: z.string().regex(/^\d{4}$/, '身份证后四位格式不正确'),
 });
 
+function attendanceFilters(query: Record<string, unknown>) {
+  return {
+    month: query.month ? String(query.month) : undefined,
+    startDate: query.start_date ? String(query.start_date) : undefined,
+    endDate: query.end_date ? String(query.end_date) : undefined,
+    internId: query.intern_id ? Number(query.intern_id) : undefined,
+    department: query.department ? String(query.department) : undefined,
+    keyword: query.keyword ? String(query.keyword).trim() : undefined,
+    status: query.status ? String(query.status) : undefined,
+  };
+}
+
 authRouter.post('/login', async (ctx: Context) => {
   const body = parseBody(ctx, loginSchema);
   if (!body) return;
@@ -43,7 +55,7 @@ internRouter.post('/attendance/punch', async (ctx: Context) => {
       accuracy: body.accuracy,
       photoBase64: body.photoBase64 || body.photo_base64,
     });
-    success(ctx, record, '打卡成功');
+    success(ctx, record ? InternModel.recordPublic(record) : record, '打卡成功');
   } catch (err: any) {
     fail(ctx, err.message || '打卡失败');
   }
@@ -122,29 +134,42 @@ adminRouter.post('/interns/import', async (ctx: Context) => {
 });
 
 adminRouter.get('/intern-attendance/records', async (ctx: Context) => {
-  const { month, intern_id, department, status } = ctx.query as any;
-  const data = await InternModel.records({
-    month: month ? String(month) : undefined,
-    internId: intern_id ? Number(intern_id) : undefined,
-    department: department ? String(department) : undefined,
-    status: status ? String(status) : undefined,
-  });
-  success(ctx, data);
-});
-
-adminRouter.get('/intern-attendance/statistics', async (ctx: Context) => {
   try {
-    const month = String((ctx.query as any).month || InternModel.localDate().slice(0, 7));
-    success(ctx, await InternModel.monthStats(month));
+    const query = ctx.query as any;
+    const page = Math.max(1, Number.parseInt(String(query.page || '1'), 10) || 1);
+    const pageSize = Math.min(100, Math.max(1, Number.parseInt(String(query.pageSize || query.page_size || '20'), 10) || 20));
+    success(ctx, await InternModel.records(attendanceFilters(query), page, pageSize));
   } catch (err: any) {
     fail(ctx, err.message || '查询失败');
   }
 });
 
-adminRouter.get('/intern-attendance/year-statistics', async (ctx: Context) => {
+adminRouter.get('/intern-attendance/records/:id/photo', async (ctx: Context) => {
   try {
-    const year = String((ctx.query as any).year || InternModel.localDate().slice(0, 4));
-    success(ctx, await InternModel.yearStats(year));
+    const recordId = Number(ctx.params.id);
+    if (!Number.isInteger(recordId) || recordId <= 0) {
+      return fail(ctx, '打卡记录 ID 无效', -1, 400);
+    }
+
+    const record = await InternModel.recordPhoto(recordId);
+    const photoData = record?.photo_data ? Buffer.from(record.photo_data as any) : null;
+    if (!record || !photoData?.length) {
+      ctx.status = 404;
+      return fail(ctx, '该打卡记录没有照片', -1, 404);
+    }
+
+    ctx.set('Content-Type', record.photo_mime || 'image/jpeg');
+    ctx.set('Cache-Control', 'no-store');
+    ctx.set('Content-Disposition', 'inline');
+    ctx.body = photoData;
+  } catch (err: any) {
+    fail(ctx, err.message || '照片读取失败');
+  }
+});
+
+adminRouter.get('/intern-attendance/statistics', async (ctx: Context) => {
+  try {
+    success(ctx, await InternModel.rangeStats(attendanceFilters(ctx.query as any)));
   } catch (err: any) {
     fail(ctx, err.message || '查询失败');
   }
@@ -170,34 +195,11 @@ adminRouter.post('/intern-attendance/adjustments', async (ctx: Context) => {
 
 adminRouter.get('/intern-attendance/export', async (ctx: Context) => {
   try {
-    const month = String((ctx.query as any).month || InternModel.localDate().slice(0, 7));
-    const workbook = await InternModel.exportMonth(month);
+    const filters = attendanceFilters(ctx.query as any);
+    const range = InternModel.attendanceRange(filters);
+    const workbook = await InternModel.exportAttendance(filters);
     ctx.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    ctx.set('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(`实习生打卡统计-${month}.xlsx`)}`);
-    ctx.body = await workbook.xlsx.writeBuffer();
-  } catch (err: any) {
-    fail(ctx, err.message || '导出失败');
-  }
-});
-
-adminRouter.get('/intern-attendance/calendar-export', async (ctx: Context) => {
-  try {
-    const month = String((ctx.query as any).month || InternModel.localDate().slice(0, 7));
-    const workbook = await InternModel.exportMonthCalendar(month);
-    ctx.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    ctx.set('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(`实习生月度日历-${month}.xlsx`)}`);
-    ctx.body = await workbook.xlsx.writeBuffer();
-  } catch (err: any) {
-    fail(ctx, err.message || '导出失败');
-  }
-});
-
-adminRouter.get('/intern-attendance/year-export', async (ctx: Context) => {
-  try {
-    const year = String((ctx.query as any).year || InternModel.localDate().slice(0, 4));
-    const workbook = await InternModel.exportYearCalendar(year);
-    ctx.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    ctx.set('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(`实习生年度日历-${year}.xlsx`)}`);
+    ctx.set('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(`实习生考勤统计-${range.label}.xlsx`)}`);
     ctx.body = await workbook.xlsx.writeBuffer();
   } catch (err: any) {
     fail(ctx, err.message || '导出失败');

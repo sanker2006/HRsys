@@ -48,6 +48,24 @@ export interface InternAttendanceAdjustmentRow {
   created_at: string;
 }
 
+export interface AttendanceRange {
+  start: string;
+  end: string;
+  days: string[];
+  mode: 'month' | 'custom';
+  label: string;
+}
+
+export interface AttendanceFilters {
+  month?: string;
+  startDate?: string;
+  endDate?: string;
+  internId?: number;
+  department?: string;
+  keyword?: string;
+  status?: string;
+}
+
 function normalizeStatus(status: unknown): 'active' | 'inactive' {
   const text = String(status || '').trim();
   const lower = text.toLowerCase();
@@ -73,6 +91,37 @@ function monthRange(month: string): { start: string; end: string; days: string[]
   const last = new Date(Date.UTC(year, m, 0)).getUTCDate();
   const days = Array.from({ length: last }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`);
   return { start: days[0], end: days[days.length - 1], days };
+}
+
+function validDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  return parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month - 1 && parsed.getUTCDate() === day;
+}
+
+function dateRange(start: string, end: string): AttendanceRange {
+  if (!validDate(start) || !validDate(end)) throw new Error('日期格式必须是 YYYY-MM-DD');
+  if (start > end) throw new Error('开始日期不能晚于结束日期');
+  const startAt = Date.parse(`${start}T00:00:00Z`);
+  const endAt = Date.parse(`${end}T00:00:00Z`);
+  const count = Math.floor((endAt - startAt) / 86400000) + 1;
+  if (count > 366) throw new Error('自定义日期范围最多支持 366 天');
+  const days = Array.from({ length: count }, (_, index) => {
+    const value = new Date(startAt + index * 86400000);
+    return value.toISOString().slice(0, 10);
+  });
+  return { start, end, days, mode: 'custom', label: `${start}至${end}` };
+}
+
+function attendanceRange(filters: Pick<AttendanceFilters, 'month' | 'startDate' | 'endDate'> = {}): AttendanceRange {
+  if (filters.startDate || filters.endDate) {
+    if (!filters.startDate || !filters.endDate) throw new Error('自定义查询必须同时提供开始日期和结束日期');
+    return dateRange(filters.startDate, filters.endDate);
+  }
+  const month = filters.month || localDate().slice(0, 7);
+  const range = monthRange(month);
+  return { ...range, mode: 'month', label: month };
 }
 
 function dateInRange(day: string, start: string, end: string): boolean {
@@ -106,11 +155,18 @@ function recordPublic(row: InternAttendanceRecordRow) {
   };
 }
 
-async function rowsForMonth(month: string, internId?: number) {
-  const range = monthRange(month);
-  const users = internId
-    ? await queryAll<InternUserRow>('SELECT * FROM intern_user WHERE id = ?', [internId])
-    : await queryAll<InternUserRow>('SELECT * FROM intern_user ORDER BY department, intern_no');
+async function rowsForRange(range: AttendanceRange, filters: AttendanceFilters = {}) {
+  let userSql = 'SELECT * FROM intern_user WHERE 1=1';
+  const userParams: any[] = [];
+  if (filters.internId) { userSql += ' AND id = ?'; userParams.push(filters.internId); }
+  if (filters.department) { userSql += ' AND department = ?'; userParams.push(filters.department); }
+  if (filters.status) { userSql += ' AND status = ?'; userParams.push(normalizeStatus(filters.status)); }
+  if (filters.keyword) {
+    userSql += ' AND (name LIKE ? OR intern_no LIKE ?)';
+    userParams.push(`%${filters.keyword}%`, `%${filters.keyword}%`);
+  }
+  userSql += ' ORDER BY department, intern_no';
+  const users = await queryAll<InternUserRow>(userSql, userParams);
   const filteredUsers = users.filter(u => u.start_date <= range.end && u.end_date >= range.start);
   const ids = filteredUsers.map(u => u.id);
   if (!ids.length) return { range, users: filteredUsers, records: [], adjustments: [] };
@@ -140,7 +196,13 @@ function invalidRecordIds(adjustments: InternAttendanceAdjustmentRow[]): Set<num
   return new Set([...state.entries()].filter(([, invalid]) => invalid).map(([id]) => id));
 }
 
-function buildDailyStats(user: InternUserRow, range: { days: string[] }, records: InternAttendanceRecordRow[], adjustments: InternAttendanceAdjustmentRow[]) {
+function buildDailyStats(
+  user: InternUserRow,
+  range: { days: string[] },
+  records: InternAttendanceRecordRow[],
+  adjustments: InternAttendanceAdjustmentRow[],
+  zeroAsAbsent = true
+) {
   const invalid = invalidRecordIds(adjustments);
   return range.days
     .filter(day => dateInRange(day, user.start_date, user.end_date))
@@ -150,7 +212,7 @@ function buildDailyStats(user: InternUserRow, range: { days: string[] }, records
       const makeup = adjustments.filter(a => a.intern_id === user.id && a.target_date === day && a.action === 'makeup').length;
       const rejected = adjustments.filter(a => a.intern_id === user.id && a.target_date === day && (a.action === 'reject' || a.action === 'void')).length;
       const valid_count = validRecords.length + makeup;
-      const status = valid_count >= 2 ? 'present' : 'absent';
+      const status = valid_count >= 2 ? 'present' : valid_count === 1 || zeroAsAbsent ? 'absent' : 'unrecorded';
       return {
         date: day,
         valid_count,
@@ -164,10 +226,73 @@ function buildDailyStats(user: InternUserRow, range: { days: string[] }, records
     });
 }
 
+function timeOnly(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const match = String(value).match(/(\d{2}:\d{2}:\d{2})/);
+  return match?.[1] || null;
+}
+
+function dayCellText(day: ReturnType<typeof buildDailyStats>[number]): string {
+  const lines: string[] = [];
+  const first = timeOnly(day.first_time);
+  const last = timeOnly(day.last_time);
+  if (first) lines.push(first);
+  if (last && last !== first) lines.push(last);
+  if (day.makeup_count > 0) lines.push(`补卡×${day.makeup_count}`);
+  return lines.join('\n');
+}
+
+function latestAdjustmentByRecord(adjustments: InternAttendanceAdjustmentRow[]) {
+  const map = new Map<number, InternAttendanceAdjustmentRow>();
+  for (const item of adjustments) {
+    if (item.record_id) map.set(item.record_id, item);
+  }
+  return map;
+}
+
+function decorateRecord(row: InternAttendanceRecordRow, adjustment?: InternAttendanceAdjustmentRow) {
+  const invalid = adjustment?.action === 'reject' || adjustment?.action === 'void';
+  const actionLabels: Record<string, string> = { reject: '驳回', void: '作废', restore: '恢复' };
+  return {
+    ...recordPublic(row),
+    valid_status: invalid ? 'invalid' : 'valid',
+    adjustment_action: adjustment?.action || null,
+    adjustment_note: adjustment ? `${actionLabels[adjustment.action] || adjustment.action}：${adjustment.reason}` : '',
+  };
+}
+
+function styleWorkbookSheet(sheet: ExcelJS.Worksheet, freezeColumns = 0) {
+  sheet.views = [{ state: 'frozen', xSplit: freezeColumns, ySplit: 1 }];
+  sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: sheet.columnCount } };
+  const header = sheet.getRow(1);
+  header.height = 30;
+  header.font = { name: 'Microsoft YaHei', bold: true, color: { argb: 'FFFFFFFF' } };
+  header.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0B5F83' } };
+  header.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+  sheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return;
+    row.font = { name: 'Microsoft YaHei', size: 10 };
+    row.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    row.height = 34;
+    if (rowNumber % 2 === 0) {
+      row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF3F7FA' } };
+    }
+  });
+  const border: Partial<ExcelJS.Borders> = {
+    top: { style: 'thin', color: { argb: 'FFD7E2EA' } },
+    left: { style: 'thin', color: { argb: 'FFD7E2EA' } },
+    bottom: { style: 'thin', color: { argb: 'FFD7E2EA' } },
+    right: { style: 'thin', color: { argb: 'FFD7E2EA' } },
+  };
+  sheet.eachRow(row => row.eachCell(cell => { cell.border = border; }));
+}
+
 export const InternModel = {
   normalizeStatus,
   publicIntern,
+  recordPublic,
   localDate,
+  attendanceRange,
   PHOTO_LIMIT,
 
   findById(id: number) {
@@ -258,7 +383,9 @@ export const InternModel = {
   },
 
   async punch(internId: number, data: { latitude?: number; longitude?: number; accuracy?: number; photoBase64?: string }) {
-    const hasGps = Number.isFinite(Number(data.latitude)) && Number.isFinite(Number(data.longitude));
+    const hasLatitude = data.latitude !== null && data.latitude !== undefined && String(data.latitude).trim() !== '';
+    const hasLongitude = data.longitude !== null && data.longitude !== undefined && String(data.longitude).trim() !== '';
+    const hasGps = hasLatitude && hasLongitude && Number.isFinite(Number(data.latitude)) && Number.isFinite(Number(data.longitude));
     const photo = decodePhoto(data.photoBase64);
     if (!hasGps && !photo.data) throw new Error('未获取到定位时必须上传打卡照片');
     const evidence = hasGps && photo.data ? 'gps_photo' : hasGps ? 'gps' : 'photo';
@@ -280,18 +407,50 @@ export const InternModel = {
     return queryOne<InternAttendanceRecordRow>('SELECT * FROM intern_attendance_record WHERE intern_id = ? ORDER BY id DESC LIMIT 1', [internId]);
   },
 
-  async records(filters: { month?: string; internId?: number; department?: string; status?: string } = {}) {
-    const month = filters.month || localDate().slice(0, 7);
-    const range = monthRange(month);
-    let sql = `SELECT r.*, u.intern_no, u.name as intern_name, u.department
-      FROM intern_attendance_record r JOIN intern_user u ON r.intern_id = u.id
+  async records(filters: AttendanceFilters = {}, page = 1, pageSize = 20) {
+    const range = attendanceRange(filters);
+    let fromSql = `FROM intern_attendance_record r JOIN intern_user u ON r.intern_id = u.id
       WHERE r.punch_date >= ? AND r.punch_date <= ?`;
     const params: any[] = [range.start, range.end];
-    if (filters.internId) { sql += ' AND r.intern_id = ?'; params.push(filters.internId); }
-    if (filters.department) { sql += ' AND u.department = ?'; params.push(filters.department); }
-    if (filters.status) { sql += ' AND u.status = ?'; params.push(normalizeStatus(filters.status)); }
-    sql += ' ORDER BY r.punch_time DESC';
-    return (await queryAll<InternAttendanceRecordRow>(sql, params)).map(recordPublic);
+    if (filters.internId) { fromSql += ' AND r.intern_id = ?'; params.push(filters.internId); }
+    if (filters.department) { fromSql += ' AND u.department = ?'; params.push(filters.department); }
+    if (filters.status) { fromSql += ' AND u.status = ?'; params.push(normalizeStatus(filters.status)); }
+    if (filters.keyword) {
+      fromSql += ' AND (u.name LIKE ? OR u.intern_no LIKE ?)';
+      params.push(`%${filters.keyword}%`, `%${filters.keyword}%`);
+    }
+    const total = Number((await queryOne<{ total: number }>(`SELECT COUNT(*) AS total ${fromSql}`, params))?.total || 0);
+    let sql = `SELECT r.*, u.intern_no, u.name as intern_name, u.department ${fromSql} ORDER BY r.punch_time DESC, r.id DESC`;
+    const listParams = [...params];
+    if (pageSize > 0) {
+      sql += ' LIMIT ? OFFSET ?';
+      listParams.push(pageSize, (page - 1) * pageSize);
+    }
+    const rows = await queryAll<InternAttendanceRecordRow>(sql, listParams);
+    const ids = rows.map(row => row.id);
+    let adjustmentMap = new Map<number, InternAttendanceAdjustmentRow>();
+    if (ids.length) {
+      const placeholders = ids.map(() => '?').join(',');
+      const adjustments = await queryAll<InternAttendanceAdjustmentRow>(
+        `SELECT * FROM intern_attendance_adjustment WHERE record_id IN (${placeholders}) ORDER BY created_at ASC, id ASC`,
+        ids
+      );
+      adjustmentMap = latestAdjustmentByRecord(adjustments);
+    }
+    return {
+      range,
+      list: rows.map(row => decorateRecord(row, adjustmentMap.get(row.id))),
+      total,
+      page,
+      pageSize: pageSize > 0 ? pageSize : total,
+    };
+  },
+
+  async recordPhoto(recordId: number) {
+    return queryOne<Pick<InternAttendanceRecordRow, 'id' | 'photo_data' | 'photo_mime'>>(
+      'SELECT id, photo_data, photo_mime FROM intern_attendance_record WHERE id = ?',
+      [recordId]
+    );
   },
 
   async adjust(data: { intern_id: number; record_id?: number | null; target_date: string; action: string; reason: string; admin_id: number }) {
@@ -304,8 +463,27 @@ export const InternModel = {
     );
   },
 
+  async rangeStats(filters: AttendanceFilters = {}) {
+    const range = attendanceRange(filters);
+    const data = await rowsForRange(range, filters);
+    const rows = data.users.map(user => {
+      const days = buildDailyStats(user, data.range, data.records, data.adjustments, false);
+      return {
+        intern: publicIntern(user),
+        days,
+        summary: {
+          present_days: days.filter(day => day.status === 'present').length,
+          absent_days: days.filter(day => day.status === 'absent').length,
+          unrecorded_days: days.filter(day => day.status === 'unrecorded').length,
+        },
+      };
+    });
+    return { range, rows };
+  },
+
   async monthStats(month: string, internId?: number) {
-    const data = await rowsForMonth(month, internId);
+    const range = attendanceRange({ month });
+    const data = await rowsForRange(range, { internId });
     const rows = data.users.map(user => {
       const days = buildDailyStats(user, data.range, data.records, data.adjustments);
       const present = days.filter(d => d.status === 'present').length;
@@ -379,85 +557,73 @@ export const InternModel = {
     return { year, months, rows };
   },
 
-  async exportMonth(month: string) {
-    const stats = await this.monthStats(month);
+  async exportAttendance(filters: AttendanceFilters = {}) {
+    const stats = await this.rangeStats(filters);
+    const recordData = await this.records(filters, 1, 0);
     const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet('实习生打卡统计');
-    sheet.columns = [
+    workbook.creator = 'HRsys';
+    workbook.created = new Date();
+
+    const summarySheet = workbook.addWorksheet('出勤统计');
+    summarySheet.columns = [
+      { header: '序号', key: 'index', width: 9 },
       { header: '实习生编号', key: 'intern_no', width: 16 },
-      { header: '姓名', key: 'name', width: 14 },
-      { header: '部门', key: 'department', width: 18 },
-      { header: '负责人', key: 'mentor', width: 14 },
-      { header: '应出勤天数', key: 'expected_days', width: 14 },
+      { header: '实习生姓名', key: 'name', width: 14 },
+      { header: '部门', key: 'department', width: 20 },
       { header: '出勤天数', key: 'present_days', width: 12 },
       { header: '缺勤天数', key: 'absent_days', width: 12 },
-      { header: '异常天数', key: 'exception_days', width: 12 },
-      { header: '补卡次数', key: 'makeup_count', width: 12 },
-      { header: '驳回次数', key: 'rejected_count', width: 12 },
+      ...stats.range.days.map(day => ({ header: day, key: day, width: 17 })),
     ];
-    for (const row of stats.rows) sheet.addRow({ ...row.intern, ...row.summary });
-    return workbook;
-  },
-
-  async exportMonthCalendar(month: string) {
-    const stats = await this.monthStats(month);
-    const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet('实习生月度日历');
-    const days = monthRange(month).days;
-    sheet.columns = [
-      { header: '实习生编号', key: 'intern_no', width: 16 },
-      { header: '姓名', key: 'name', width: 14 },
-      { header: '部门', key: 'department', width: 18 },
-      { header: '负责人', key: 'mentor', width: 14 },
-      ...days.map(day => ({ header: day.slice(8), key: day, width: 14 })),
-      { header: '应出勤天数', key: 'expected_days', width: 14 },
-      { header: '出勤天数', key: 'present_days', width: 12 },
-      { header: '缺勤天数', key: 'absent_days', width: 12 },
-      { header: '异常天数', key: 'exception_days', width: 12 },
-    ];
-    for (const row of stats.rows) {
-      const data: any = { ...row.intern, ...row.summary };
-      for (const day of days) {
-        const item = row.days.find((d: any) => d.date === day);
-        if (!item) data[day] = '不在实习期';
-        else {
-          const flags = [];
-          if (item.makeup_count) flags.push(`补${item.makeup_count}`);
-          if (item.rejected_count) flags.push(`驳${item.rejected_count}`);
-          data[day] = `${item.status === 'present' ? '出勤' : '缺勤'}(${item.valid_count})${flags.length ? ` ${flags.join('/')}` : ''}`;
-        }
+    stats.rows.forEach((row, index) => {
+      const data: Record<string, unknown> = {
+        index: index + 1,
+        ...row.intern,
+        department: row.intern.department || null,
+        ...row.summary,
+      };
+      for (const day of stats.range.days) {
+        const detail = row.days.find(item => item.date === day);
+        data[day] = detail ? dayCellText(detail) || null : null;
       }
-      sheet.addRow(data);
-    }
-    return workbook;
-  },
+      summarySheet.addRow(data);
+    });
+    styleWorkbookSheet(summarySheet, 6);
 
-  async exportYearCalendar(year: string) {
-    const stats = await this.yearStats(year);
-    const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet('实习生年度日历');
-    sheet.columns = [
+    const recordSheet = workbook.addWorksheet('原始打卡记录');
+    recordSheet.columns = [
+      { header: '序号', key: 'index', width: 9 },
+      { header: '日期', key: 'punch_date', width: 14 },
+      { header: '打卡时间', key: 'punch_time', width: 14 },
       { header: '实习生编号', key: 'intern_no', width: 16 },
-      { header: '姓名', key: 'name', width: 14 },
-      { header: '部门', key: 'department', width: 18 },
-      { header: '负责人', key: 'mentor', width: 14 },
-      ...Array.from({ length: 12 }, (_, index) => {
-        const key = `${year}-${String(index + 1).padStart(2, '0')}`;
-        return { header: `${index + 1}月`, key, width: 24 };
-      }),
-      { header: '全年应出勤', key: 'expected_days', width: 14 },
-      { header: '全年出勤', key: 'present_days', width: 12 },
-      { header: '全年缺勤', key: 'absent_days', width: 12 },
-      { header: '全年异常', key: 'exception_days', width: 12 },
+      { header: '姓名', key: 'intern_name', width: 14 },
+      { header: '部门', key: 'department', width: 20 },
+      { header: '证据类型', key: 'evidence_type', width: 14 },
+      { header: '经纬度', key: 'location', width: 25 },
+      { header: '定位精度', key: 'accuracy', width: 13 },
+      { header: '是否有照片', key: 'has_photo', width: 13 },
+      { header: '来源', key: 'source', width: 13 },
+      { header: '有效状态', key: 'valid_status', width: 13 },
+      { header: '调整说明', key: 'adjustment_note', width: 32 },
     ];
-    for (const row of stats.rows) {
-      const data: any = { ...row.intern, ...row.summary };
-      for (const month of row.months) {
-        const s = month.summary;
-        data[month.month] = `应${s.expected_days}/出${s.present_days}/缺${s.absent_days}/异${s.exception_days}`;
-      }
-      sheet.addRow(data);
-    }
+    const evidenceLabels: Record<string, string> = { gps: 'GPS', photo: '照片', gps_photo: 'GPS+照片' };
+    recordData.list.forEach((record: any, index: number) => {
+      recordSheet.addRow({
+        index: index + 1,
+        punch_date: record.punch_date,
+        punch_time: timeOnly(record.punch_time) || '',
+        intern_no: record.intern_no,
+        intern_name: record.intern_name,
+        department: record.department,
+        evidence_type: evidenceLabels[record.evidence_type] || record.evidence_type || '-',
+        location: record.latitude == null || record.longitude == null ? null : `${Number(record.latitude).toFixed(6)}, ${Number(record.longitude).toFixed(6)}`,
+        accuracy: record.accuracy == null ? null : `${Number(record.accuracy).toFixed(1)}m`,
+        has_photo: record.has_photo ? '是' : '否',
+        source: record.source || '-',
+        valid_status: record.valid_status === 'invalid' ? '无效' : '有效',
+        adjustment_note: record.adjustment_note || null,
+      });
+    });
+    styleWorkbookSheet(recordSheet, 0);
     return workbook;
   },
 };

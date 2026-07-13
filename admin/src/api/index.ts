@@ -172,22 +172,16 @@ export const internApi = {
   records(params?: any) {
     return api.get('/admin/intern-attendance/records', { params })
   },
+  recordPhoto(id: number) {
+    return api.get(`/admin/intern-attendance/records/${id}/photo`, { responseType: 'blob' })
+  },
   statistics(params?: any) {
     return api.get('/admin/intern-attendance/statistics', { params })
-  },
-  yearStatistics(params?: any) {
-    return api.get('/admin/intern-attendance/year-statistics', { params })
   },
   adjust(data: any) {
     return api.post('/admin/intern-attendance/adjustments', data)
   },
   export(params?: any) {
     return api.get('/admin/intern-attendance/export', { params, responseType: 'blob' })
-  },
-  exportCalendar(params?: any) {
-    return api.get('/admin/intern-attendance/calendar-export', { params, responseType: 'blob' })
-  },
-  exportYear(params?: any) {
-    return api.get('/admin/intern-attendance/year-export', { params, responseType: 'blob' })
   },
 }
