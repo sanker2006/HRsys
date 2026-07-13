@@ -14,7 +14,8 @@
     "db:check": "tsx src/tools/db-check.ts",
     "db:check:mysql": "tsx src/tools/db-check.ts",
     "pressure:mysql": "tsx src/tools/mysql-pressure.ts",
-    "test:intern-attendance": "tsx src/test/intern_attendance_test.ts"
+    "test:intern-attendance": "tsx src/test/intern_attendance_test.ts",
+    "test:personal-summary": "tsx src/test/personal_summary_validation_test.ts"
   },
   "dependencies": {
     "@koa/cors": "^5.0.0",

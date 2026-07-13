@@ -34,15 +34,21 @@ function pickValue(item: any, keys: string[]): any {
 function isBlankImportRow(item: any): boolean {
   if (!item || typeof item !== 'object') return true;
   return Object.entries(item).every(([key, value]) => {
-    if (key === '__row' || key === 'row') return true;
+    if (key === '__row' || key === 'row' || key === '题目状态' || key === 'question_status') return true;
     return value === undefined || value === null || String(value).trim() === '';
   });
 }
 
 router.get('/:batchId', async (ctx: Context) => {
   const batchId = parseInt(ctx.params.batchId);
-  const rows = await SelfQuestionModel.findByBatchId(batchId);
-  success(ctx, SelfQuestionModel.toExportFormat(rows));
+  const [rows, lockedIds] = await Promise.all([
+    SelfQuestionModel.findByBatchId(batchId),
+    SelfQuestionModel.findLockedTargetIds(batchId),
+  ]);
+  success(ctx, SelfQuestionModel.toExportFormat(rows).map(row => ({
+    ...row,
+    locked: lockedIds.has(row.user_id),
+  })));
 });
 
 router.get('/:batchId/me', async (ctx: Context) => {
@@ -58,11 +64,15 @@ router.post('/import', admin, async (ctx: Context) => {
   if (!batch_id) return fail(ctx, '缺少 batch_id');
   const batch = await BatchModel.findById(batch_id);
   if (!batch) return fail(ctx, '批次不存在', -1, 404);
+  if (!['draft', 'active'].includes(batch.status) || BatchModel.isPastEndTime(batch)) {
+    return fail(ctx, '已结束或已过期批次不能导入题目', -1, 409);
+  }
   if (!Array.isArray(items)) return fail(ctx, 'items 必须是数组');
 
   const importErrors: Array<{ row: number; employee_no?: string; user_name?: string; message: string }> = [];
   const valid: Array<{ row: number; user_id: number; employee_no: string; user_name: string; data: any }> = [];
   let skippedBlank = 0;
+  let skippedNoQuestions = 0;
 
   for (let idx = 0; idx < items.length; idx++) {
     const item = items[idx];
@@ -99,6 +109,7 @@ router.post('/import', admin, async (ctx: Context) => {
     }
 
     const data: any = {};
+    let hasQuestionInput = false;
     for (let i = 1; i <= 10; i++) {
       const content = pickString(item, [
         `业绩题${i}`, `业绩评价题${i}`, `业绩题目${i}`,
@@ -110,9 +121,12 @@ router.post('/import', admin, async (ctx: Context) => {
         `performance_weight_${i}`, `分值${i}`, `权重${i}`,
         `score_${i}`, `weight_${i}`,
       ]);
+      if (content || score !== undefined) hasQuestionInput = true;
       if (content) {
         data[`content_${i}`] = content;
         data[`weight_${i}`] = score !== undefined ? Number(score) : null;
+      } else if (score !== undefined) {
+        data[`weight_${i}`] = Number(score);
       }
     }
 
@@ -125,10 +139,18 @@ router.post('/import', admin, async (ctx: Context) => {
         `综合分值${i}`, `综合权重${i}`, `comprehensive_score_${i}`,
         `comprehensive_weight_${i}`,
       ]);
+      if (content || score !== undefined) hasQuestionInput = true;
       if (content) {
         data[`comp_content_${i}`] = content;
         data[`comp_weight_${i}`] = score !== undefined ? Number(score) : null;
+      } else if (score !== undefined) {
+        data[`comp_weight_${i}`] = Number(score);
       }
+    }
+
+    if (!hasQuestionInput) {
+      skippedNoQuestions++;
+      continue;
     }
 
     valid.push({ row, user_id: user.id, employee_no: employeeNo, user_name: user.name, data });
@@ -139,9 +161,12 @@ router.post('/import', admin, async (ctx: Context) => {
 
   success(ctx, {
     total: items.length,
-    processed: items.length - skippedBlank,
+    processed: items.length - skippedBlank - skippedNoQuestions,
     skipped_blank: skippedBlank,
+    skipped_no_questions: skippedNoQuestions,
     success: result.success,
+    unchanged: result.unchanged,
+    locked: result.errors.filter(error => error.code === 'locked').length,
     failed: errors.length,
     errors,
   }, `导入完成，成功 ${result.success} 条，失败 ${errors.length} 条`);
@@ -149,6 +174,12 @@ router.post('/import', admin, async (ctx: Context) => {
 
 router.delete('/:batchId', admin, async (ctx: Context) => {
   const batchId = parseInt(ctx.params.batchId);
+  const batch = await BatchModel.findById(batchId);
+  if (!batch) return fail(ctx, '批次不存在', -1, 404);
+  if (batch.status !== 'draft') return fail(ctx, '只有草稿批次可以清空题目', -1, 409);
+  if (await SelfQuestionModel.batchHasAnswers(batchId)) {
+    return fail(ctx, '当前批次已经产生评价答案，不能清空题目', -1, 409);
+  }
   await SelfQuestionModel.deleteByBatchId(batchId);
   success(ctx, null, '已清除所有自评题目');
 });

@@ -54,7 +54,9 @@ function round1(value: number): number {
 }
 
 function average(values: Array<number | null | undefined>): number | null {
-  const valid = values.filter((value): value is number => Number.isFinite(Number(value)));
+  const valid = values.filter((value): value is number =>
+    value !== null && value !== undefined && Number.isFinite(Number(value))
+  );
   if (valid.length === 0) return null;
   return round1(valid.reduce((sum, value) => sum + value, 0) / valid.length);
 }
@@ -120,16 +122,17 @@ function firstRelationToTarget(
   return relationsToTarget(relations, targetId, filters)[0];
 }
 
-function getTargetUsers(): Promise<StatUser[]> {
+function getTargetUsers(batchId: number): Promise<StatUser[]> {
   return queryAll<StatUser>(
     `SELECT u.id, u.name, u.employee_no, u.department, u.position, u.level,
             COALESCE(d.sort_order, 999999) as department_sort_order,
             COALESCE(d.id, 999999) as department_id
      FROM app_user u
+     JOIN self_question sq ON sq.user_id = u.id AND sq.batch_id = ?
      LEFT JOIN department d ON d.name = u.department
      WHERE u.is_admin = 0 AND u.status = 'active' AND u.level IN ('manager', 'staff')
      ORDER BY COALESCE(d.sort_order, 999999), COALESCE(d.id, 999999), u.employee_no ASC`,
-    []
+    [batchId]
   );
 }
 
@@ -313,7 +316,7 @@ export async function buildStatistics(batchId: number): Promise<StatisticsResult
   const batch = await BatchModel.findById(batchId);
   if (!batch) return null;
 
-  const users = await getTargetUsers();
+  const users = await getTargetUsers(batchId);
   const relations = await RelationModel.findByBatchId(batchId);
   const answers = await AnswerModel.findByRelationIds(relations.map(relation => relation.id));
   const answersMap = new Map<number, AnswerRow[]>();

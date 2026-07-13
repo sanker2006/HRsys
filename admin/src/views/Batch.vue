@@ -84,16 +84,20 @@
                 <span>02</span>
                 <strong>题目模板</strong>
               </button>
-              <button type="button" class="workflow-step" @click="$router.push(`/relation/${row.id}`)">
+              <button type="button" class="workflow-step" @click="$router.push(`/personal-summary/${row.id}`)">
                 <span>03</span>
+                <strong>个人总结</strong>
+              </button>
+              <button type="button" class="workflow-step" @click="$router.push(`/relation/${row.id}`)">
+                <span>04</span>
                 <strong>评价关系</strong>
               </button>
               <button type="button" class="workflow-step primary-step" @click="$router.push(`/progress/${row.id}`)">
-                <span>04</span>
+                <span>05</span>
                 <strong>进度监控</strong>
               </button>
               <button type="button" class="workflow-step stat-step" @click="$router.push(`/statistics/${row.id}`)">
-                <span>05</span>
+                <span>06</span>
                 <strong>数据统计</strong>
               </button>
             </div>
@@ -428,7 +432,7 @@ onMounted(loadBatches)
 
 .workflow-strip {
   display: grid;
-  grid-template-columns: repeat(5, minmax(124px, 1fr));
+  grid-template-columns: repeat(6, minmax(108px, 1fr));
   gap: 10px;
 }
 

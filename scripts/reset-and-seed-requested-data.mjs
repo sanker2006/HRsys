@@ -224,7 +224,10 @@ async function main() {
     token,
     body: { batch_id: batch.id, items: questionItems },
   })).data;
-  const generated = (await request(`/relation/generate/${batch.id}`, { method: 'POST', token })).data;
+  const preview = (await request(`/relation/generate/${batch.id}/preview`, { method: 'POST', token })).data;
+  const generated = (await request(`/relation/generate/${batch.id}`, {
+    method: 'POST', token, body: { preview_hash: preview.preview_hash },
+  })).data;
   await request(`/batch/${batch.id}/start`, { method: 'POST', token });
 
   const relations = (await request(`/relation/?batch_id=${batch.id}&pageSize=500`, { token })).data.list || [];

@@ -1,8 +1,11 @@
 import Router from '@koa/router';
 import { RelationModel } from '../model/relation.js';
-import { BatchModel } from '../model/batch.js';
 import { UserModel } from '../model/user.js';
-import { findMissingQuestionUsers, generateRelations } from '../service/generateRelations.js';
+import {
+  buildRelationPreview,
+  generateRelations,
+  RelationGenerationError,
+} from '../service/generateRelations.js';
 import { success, fail } from '../utils/response.js';
 import { auth } from '../middleware/auth.js';
 import { admin } from '../middleware/admin.js';
@@ -16,7 +19,7 @@ router.get('/', async (ctx: Context) => {
   const { batch_id, evaluator_id, target_id, eval_type, status, page = '1', pageSize = '100' } = ctx.query as any;
   if (!batch_id) return fail(ctx, '缺少 batch_id');
   const p = Math.max(1, parseInt(page));
-  const ps = Math.min(500, Math.max(1, parseInt(pageSize)));
+  const ps = Math.min(5000, Math.max(1, parseInt(pageSize)));
   const filters: any = {};
   if (evaluator_id) filters.evaluator_id = parseInt(evaluator_id);
   if (target_id) filters.target_id = parseInt(target_id);
@@ -40,16 +43,42 @@ router.get('/my', async (ctx: Context) => {
   success(ctx, { list, grouped });
 });
 
+function handleGenerationError(ctx: Context, error: unknown): void {
+  if (error instanceof RelationGenerationError) {
+    fail(ctx, error.message, -1, error.status, error.data);
+    return;
+  }
+  throw error;
+}
+
+router.post('/generate/:batchId/preview', admin, async (ctx: Context) => {
+  const batchId = parseInt(ctx.params.batchId);
+  try {
+    const preview = await buildRelationPreview(batchId);
+    if (preview.missing_questions.length > 0) {
+      return fail(ctx, '存在未录入题目的人员，无法生成评价关系', -1, 409, {
+        missing_questions: preview.missing_questions,
+      });
+    }
+    success(ctx, preview);
+  } catch (error) {
+    handleGenerationError(ctx, error);
+  }
+});
+
 router.post('/generate/:batchId', admin, async (ctx: Context) => {
   const batchId = parseInt(ctx.params.batchId);
-  const batch = await BatchModel.findById(batchId);
-  if (!batch) return fail(ctx, '批次不存在', -1, 404);
-  const missingQuestions = await findMissingQuestionUsers(batchId);
-  if (missingQuestions.length > 0) {
-    return fail(ctx, '存在未录入题目的人员，无法生成评价关系', -1, 200, { missing_questions: missingQuestions });
+  const { preview_hash } = ctx.request.body as any;
+  if (!preview_hash) return fail(ctx, '请先预览本次增量生成范围', -1, 400);
+  try {
+    const result = await generateRelations(batchId, String(preview_hash), {
+      adminId: Number(ctx.state.userId),
+      ip: ctx.ip,
+    });
+    success(ctx, result, `增量生成完成，新增 ${result.total} 条关系`);
+  } catch (error) {
+    handleGenerationError(ctx, error);
   }
-  const result = await generateRelations(batchId);
-  success(ctx, result, `生成完成，共 ${result.total} 条关系`);
 });
 
 router.post('/', admin, async (ctx: Context) => {
@@ -70,6 +99,12 @@ router.delete('/:id', admin, async (ctx: Context) => {
   const id = parseInt(ctx.params.id);
   const r = await RelationModel.findById(id);
   if (!r) return fail(ctx, '关系不存在', -1, 404);
+  if (r.status !== 'pending') {
+    return fail(ctx, '草稿或已完成的评价关系不能删除', -1, 409);
+  }
+  if (await RelationModel.hasAnswers(id)) {
+    return fail(ctx, '该评价关系已经存在答案，不能删除', -1, 409);
+  }
   await RelationModel.delete(id);
   success(ctx, null, '删除成功');
 });

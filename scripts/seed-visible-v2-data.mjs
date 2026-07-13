@@ -104,7 +104,10 @@ async function main() {
   const questionUsers = (refreshed.list || []).filter(user => ['manager', 'staff'].includes(user.level));
   const items = questionUsers.map(user => questionRow(user.name, user.employee_no));
   const imported = await request('/self-question/import', { method: 'POST', token, body: { batch_id: batch.id, items } });
-  const generated = await request(`/relation/generate/${batch.id}`, { method: 'POST', token });
+  const preview = await request(`/relation/generate/${batch.id}/preview`, { method: 'POST', token });
+  const generated = await request(`/relation/generate/${batch.id}`, {
+    method: 'POST', token, body: { preview_hash: preview.preview_hash },
+  });
   await request(`/batch/${batch.id}/start`, { method: 'POST', token });
 
   console.log(JSON.stringify({

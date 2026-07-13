@@ -45,6 +45,35 @@ async function ensureAdmin(): Promise<void> {
   );
 }
 
+async function ensureRelationUniqueIndex(): Promise<void> {
+  const [indexes] = await getMysqlPool().query<mysql.RowDataPacket[]>(
+    `SELECT INDEX_NAME
+       FROM information_schema.STATISTICS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'relation'
+        AND INDEX_NAME = 'idx_relation_batch_pair_type_unique'
+      LIMIT 1`
+  );
+  if (indexes.length > 0) return;
+
+  const [duplicates] = await getMysqlPool().query<mysql.RowDataPacket[]>(
+    `SELECT batch_id, evaluator_id, target_id, eval_type, COUNT(*) AS total
+       FROM relation
+      GROUP BY batch_id, evaluator_id, target_id, eval_type
+     HAVING COUNT(*) > 1
+      LIMIT 20`
+  );
+  if (duplicates.length > 0) {
+    throw new Error(`评价关系存在重复数据，无法添加唯一约束：${JSON.stringify(duplicates)}`);
+  }
+
+  await getMysqlPool().query(
+    `ALTER TABLE relation
+       ADD UNIQUE KEY idx_relation_batch_pair_type_unique
+       (batch_id, evaluator_id, target_id, eval_type)`
+  );
+}
+
 export async function initDb(): Promise<void> {
   pool = mysql.createPool({
     uri: DATABASE_URL,
@@ -66,6 +95,7 @@ export async function initDb(): Promise<void> {
       if (err?.code !== 'ER_DUP_KEYNAME') throw err;
     }
   }
+  await ensureRelationUniqueIndex();
   await ensureAdmin();
 }
 

@@ -17,6 +17,8 @@
       </div>
     </section>
 
+    <PersonalSummaryDownload :relation-id="props.relationId" :summary="personalSummary" />
+
     <section v-if="mode === 'leader_staff_total'" class="question-card total-card">
       <div class="card-head">
         <div>
@@ -88,11 +90,13 @@ import { closeToast, showLoadingToast, showToast } from 'vant'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { h5Api } from '../api'
+import PersonalSummaryDownload from '../components/PersonalSummaryDownload.vue'
 
 const props = defineProps<{ relationId: string }>()
 const router = useRouter()
 
 const relation = ref<any>(null)
+const personalSummary = ref<any>(null)
 const mode = ref('detail')
 const blockedReason = ref('')
 const performanceQuestions = ref<any[]>([])
@@ -165,6 +169,7 @@ onMounted(async () => {
     const res: any = await h5Api.getRelationDetail(Number(props.relationId))
     const data = res.data || {}
     relation.value = data.relation
+    personalSummary.value = data.personal_summary || null
     mode.value = data.mode || 'detail'
     blockedReason.value = data.can_submit === false ? data.blocked_reason || '当前暂不能提交' : ''
     performanceQuestions.value = data.performance_questions || []

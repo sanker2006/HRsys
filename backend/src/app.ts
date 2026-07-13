@@ -23,6 +23,10 @@ app.use(koaBody({
   formLimit: '10mb',
   multipart: true,
   includeUnparsed: true,
+  formidable: {
+    maxFileSize: 10 * 1024 * 1024,
+    multiples: false,
+  },
 }));
 app.use(router.routes()).use(router.allowedMethods());
 

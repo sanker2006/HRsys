@@ -4,6 +4,7 @@ import { AnswerModel, type AnswerRow } from '../model/answer.js';
 import { RelationModel, type RelationRow } from '../model/relation.js';
 import { SelfQuestionModel, type QuestionItem } from '../model/self_question.js';
 import { BatchModel } from '../model/batch.js';
+import { PersonalSummaryModel } from '../model/personal_summary.js';
 import { buildStatistics, type StatisticsRow } from '../service/statistics.js';
 import { success, fail } from '../utils/response.js';
 import { auth } from '../middleware/auth.js';
@@ -288,6 +289,9 @@ router.get('/relation/:relationId', async (ctx: Context) => {
   const context = await buildQuestionContext(relation);
   const gate = await canEvaluate(relation);
   const mode = isLeaderStaffTotalRelation(relation) ? 'leader_staff_total' : 'detail';
+  const personalSummary = relation.eval_type === 'self'
+    ? null
+    : await PersonalSummaryModel.findMetadata(relation.batch_id, relation.target_id);
   success(ctx, {
     relation,
     answers,
@@ -299,6 +303,11 @@ router.get('/relation/:relationId', async (ctx: Context) => {
     can_submit: gate.ok,
     blocked_reason: gate.reason ?? null,
     mode,
+    personal_summary: personalSummary ? {
+      original_name: personalSummary.original_name,
+      file_size: personalSummary.file_size,
+      uploaded_at: personalSummary.updated_at,
+    } : null,
   });
 });
 

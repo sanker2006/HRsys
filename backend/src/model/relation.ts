@@ -154,8 +154,12 @@ export const RelationModel = {
     return execute('DELETE FROM relation WHERE id = ?', [id]);
   },
 
-  deleteByBatchId(batchId: number): Promise<void> {
-    return execute('DELETE FROM relation WHERE batch_id = ?', [batchId]);
+  async hasAnswers(id: number): Promise<boolean> {
+    const row = await queryOne<{ total: number }>(
+      'SELECT COUNT(*) as total FROM answer WHERE relation_id = ?',
+      [id]
+    );
+    return Number(row?.total ?? 0) > 0;
   },
 
   async getStats(batchId: number): Promise<{

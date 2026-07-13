@@ -68,7 +68,8 @@ CREATE TABLE IF NOT EXISTS relation (
     updated_at   DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_relation_batch FOREIGN KEY (batch_id) REFERENCES batch(id) ON DELETE CASCADE,
     CONSTRAINT fk_relation_evaluator FOREIGN KEY (evaluator_id) REFERENCES app_user(id) ON DELETE CASCADE,
-    CONSTRAINT fk_relation_target FOREIGN KEY (target_id) REFERENCES app_user(id) ON DELETE CASCADE
+    CONSTRAINT fk_relation_target FOREIGN KEY (target_id) REFERENCES app_user(id) ON DELETE CASCADE,
+    UNIQUE KEY idx_relation_batch_pair_type_unique (batch_id, evaluator_id, target_id, eval_type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS self_question (
@@ -123,6 +124,23 @@ CREATE TABLE IF NOT EXISTS answer (
     updated_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_answer_relation FOREIGN KEY (relation_id) REFERENCES relation(id) ON DELETE CASCADE,
     UNIQUE KEY idx_answer_relation_seq (relation_id, question_seq)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS personal_summary (
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    batch_id      INT NOT NULL,
+    user_id       INT NOT NULL,
+    original_name VARCHAR(255) NOT NULL,
+    mime_type     VARCHAR(128) NOT NULL,
+    file_size     INT NOT NULL,
+    file_data     LONGBLOB NOT NULL,
+    uploaded_by   INT NULL,
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_personal_summary_batch FOREIGN KEY (batch_id) REFERENCES batch(id) ON DELETE CASCADE,
+    CONSTRAINT fk_personal_summary_user FOREIGN KEY (user_id) REFERENCES app_user(id) ON DELETE CASCADE,
+    CONSTRAINT fk_personal_summary_uploader FOREIGN KEY (uploaded_by) REFERENCES app_user(id) ON DELETE SET NULL,
+    UNIQUE KEY idx_personal_summary_batch_user_unique (batch_id, user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS log (
@@ -190,6 +208,8 @@ CREATE INDEX idx_relation_batch_status ON relation(batch_id, status);
 CREATE INDEX idx_relation_batch_type_status ON relation(batch_id, eval_type, status);
 CREATE INDEX idx_answer_relation ON answer(relation_id);
 CREATE INDEX idx_answer_relation_total ON answer(relation_id, is_total);
+CREATE INDEX idx_personal_summary_batch ON personal_summary(batch_id);
+CREATE INDEX idx_personal_summary_user ON personal_summary(user_id);
 CREATE INDEX idx_self_question_batch ON self_question(batch_id);
 CREATE INDEX idx_self_question_user ON self_question(user_id);
 CREATE INDEX idx_app_user_level_status_department ON app_user(level, status, department);

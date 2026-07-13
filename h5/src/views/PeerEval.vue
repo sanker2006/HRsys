@@ -14,6 +14,8 @@
       </div>
     </section>
 
+    <PersonalSummaryDownload :relation-id="props.relationId" :summary="personalSummary" />
+
     <section v-if="questions.length" class="question-group">
       <div class="group-title">综合评价</div>
       <article v-for="q in questions" :key="q.answer_seq" class="question-card">
@@ -50,12 +52,14 @@ import { closeToast, showConfirmDialog, showLoadingToast, showToast } from 'vant
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { h5Api } from '../api'
+import PersonalSummaryDownload from '../components/PersonalSummaryDownload.vue'
 
 const props = defineProps<{ batchId: string; relationId: string }>()
 const router = useRouter()
 
 const loading = ref(false)
 const relation = ref<any>(null)
+const personalSummary = ref<any>(null)
 const list = ref<any[]>([])
 const questions = ref<any[]>([])
 const answers = reactive<Record<number, number>>({})
@@ -103,6 +107,7 @@ async function loadDetail() {
     const res: any = await h5Api.getRelationDetail(Number(props.relationId))
     const data = res.data || {}
     relation.value = data.relation
+    personalSummary.value = data.personal_summary || null
     questions.value = data.comprehensive_questions || []
     for (const key of Object.keys(answers)) delete answers[Number(key)]
     for (const q of questions.value) answers[q.answer_seq] = 0

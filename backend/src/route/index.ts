@@ -8,6 +8,7 @@ import selfQuestionRoutes from './self_question.js';
 import answerRoutes from './answer.js';
 import departmentRoutes from './department.js';
 import internRoutes from './intern.js';
+import personalSummaryRoutes from './personal_summary.js';
 
 const router = new Router();
 router.use(authRoutes.routes(), authRoutes.allowedMethods());
@@ -18,6 +19,7 @@ router.use(relationRoutes.routes(), relationRoutes.allowedMethods());
 router.use(selfQuestionRoutes.routes(), selfQuestionRoutes.allowedMethods());
 router.use(answerRoutes.routes(), answerRoutes.allowedMethods());
 router.use(departmentRoutes.routes(), departmentRoutes.allowedMethods());
+router.use(personalSummaryRoutes.routes(), personalSummaryRoutes.allowedMethods());
 for (const route of internRoutes) {
   router.use(route.routes(), route.allowedMethods());
 }

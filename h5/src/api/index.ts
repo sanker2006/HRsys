@@ -19,6 +19,12 @@ export const h5Api = {
   getRelationDetail(relationId: number) {
     return api.get(`/answer/relation/${relationId}`)
   },
+  downloadPersonalSummary(relationId: number) {
+    return api.get(`/personal-summary/relation/${relationId}/download`, {
+      responseType: 'blob',
+      timeout: 60000,
+    })
+  },
   getDownwardOverview(batchId: number) {
     return api.get(`/answer/downward/${batchId}`)
   },

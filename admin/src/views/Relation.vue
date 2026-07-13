@@ -6,7 +6,7 @@
         <p>检查评价人、角色、被评人和状态，确认关系生成范围符合业务规则。</p>
       </div>
       <div class="hero-actions">
-        <el-button type="primary" @click="handleGenerate" :loading="generating">自动生成</el-button>
+        <el-button v-if="canGenerate" type="primary" @click="handleGenerate" :loading="generating">预览增量生成</el-button>
         <el-button @click="handleExport">导出</el-button>
         <el-upload action="" :before-upload="handleImport" accept=".csv" :show-file-list="false">
           <el-button>批量导入</el-button>
@@ -87,7 +87,7 @@
         </el-table-column>
         <el-table-column label="操作" width="80" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" type="danger" @click="handleDelete(row)">删除</el-button>
+            <el-button size="small" type="danger" :disabled="row.status !== 'pending'" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -104,22 +104,78 @@
         />
       </div>
     </el-card>
+
+    <el-dialog v-model="previewVisible" title="增量生成预览" width="min(860px, 92vw)" destroy-on-close>
+      <el-alert
+        type="success"
+        :closable="false"
+        title="现有评价关系、题目、草稿和正式答案均会保留，本次只新增缺失关系。"
+        class="preview-alert"
+      />
+      <div v-if="preview" class="preview-summary">
+        <div><span>现有关系</span><strong>{{ preview.existing_total }}</strong></div>
+        <div><span>新增关系</span><strong>{{ preview.new_relations.total }}</strong></div>
+        <div><span>新增人员</span><strong>{{ preview.new_participants.length }}</strong></div>
+        <div><span>保留的旧规则关系</span><strong>{{ preview.obsolete_relations }}</strong></div>
+      </div>
+      <div v-if="preview" class="preview-breakdown">
+        <el-tag>自评 +{{ preview.new_relations.self }}</el-tag>
+        <el-tag type="warning">同层互评 +{{ preview.new_relations.peer }}</el-tag>
+        <el-tag type="success">向下评价 +{{ preview.new_relations.downward }}</el-tag>
+      </div>
+      <section v-if="preview?.existing_evaluators_with_new_tasks?.length" class="impact-section">
+        <h3>将新增任务的原有人员</h3>
+        <div class="impact-list">
+          <span v-for="item in preview.existing_evaluators_with_new_tasks" :key="item.user_id">
+            {{ item.name }}（{{ item.department }}，+{{ item.new_tasks }}项）
+          </span>
+        </div>
+      </section>
+      <section v-if="preview?.score_affected_users?.length" class="impact-section warning-section">
+        <h3>统计分可能重新计算的人员</h3>
+        <p>新人提交对以下人员的评价后，其互评平均分和最终总分会更新。</p>
+        <div class="impact-list">
+          <span v-for="item in preview.score_affected_users" :key="item.user_id">
+            {{ item.name }}（{{ item.department }}）
+          </span>
+        </div>
+      </section>
+      <el-alert
+        v-if="preview?.existing_evaluators_with_new_tasks?.length"
+        type="warning"
+        :closable="false"
+        title="生成后待评任务总数会增加，批次总体完成率可能下降。"
+      />
+      <template #footer>
+        <el-button @click="previewVisible = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="generating"
+          :disabled="!preview || preview.new_relations.total === 0"
+          @click="confirmGenerate"
+        >确认增量生成</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { relationApi } from '../api'
+import { batchApi, relationApi } from '../api'
 
 const props = defineProps<{ batchId: string }>()
 const loading = ref(false)
 const generating = ref(false)
+const previewVisible = ref(false)
+const preview = ref<any>(null)
+const batch = ref<any>(null)
 const allList = ref<any[]>([])
 const filterType = ref('')
 const filterStatus = ref('')
 const currentPage = ref(1)
 const pageSize = ref(20)
+const canGenerate = computed(() => ['draft', 'active'].includes(batch.value?.status))
 
 const typeTag: Record<string, string> = { self: '', peer: 'warning', downward: 'success' }
 const typeText: Record<string, string> = { self: '自评', peer: '同层互评', downward: '向下评价' }
@@ -155,31 +211,52 @@ const typeCount = computed(() => ({
 async function loadList() {
   loading.value = true
   try {
-    const res: any = await relationApi.list({ batchId: Number(props.batchId), pageSize: 1000 })
+    const [res, batchRes]: any = await Promise.all([
+      relationApi.list({ batchId: Number(props.batchId), pageSize: 5000 }),
+      batchApi.get(Number(props.batchId)),
+    ])
     allList.value = res.data?.list || []
+    batch.value = batchRes.data
   } finally {
     loading.value = false
   }
 }
 
 async function handleGenerate() {
-  await ElMessageBox.confirm('确认重新自动生成评价关系？这会覆盖当前批次已有关系。', '自动生成')
   generating.value = true
   try {
-    const res: any = await relationApi.generate(Number(props.batchId))
-    ElMessage.success(`生成完成，共 ${res.data?.total || 0} 条关系`)
-    await loadList()
+    const res: any = await relationApi.previewGenerate(Number(props.batchId))
+    preview.value = res.data
+    previewVisible.value = true
   } catch (err: any) {
     const missing = err?.data?.missing_questions || []
     if (missing.length > 0) {
       const rows = missing.map((item: any) =>
         `${item.department} / ${item.employee_no} / ${item.name} / ${roleText[item.level] || item.level}`
-      ).join('<br/>')
+      ).join('；')
       await ElMessageBox.alert(
-        `以下人员未录入当前批次题目，无法生成评价关系：<br/><br/>${rows}<br/><br/>请先进入“题目模板”导入完整题目。`,
+        `以下人员未录入当前批次题目，无法生成评价关系：${rows}。请先进入“题目模板”导入完整题目。`,
         '题目缺失',
-        { dangerouslyUseHTMLString: true, type: 'warning' }
+        { type: 'warning' }
       )
+    }
+  } finally {
+    generating.value = false
+  }
+}
+
+async function confirmGenerate() {
+  if (!preview.value?.preview_hash) return
+  generating.value = true
+  try {
+    const res: any = await relationApi.generate(Number(props.batchId), preview.value.preview_hash)
+    previewVisible.value = false
+    ElMessage.success(`增量生成完成，新增 ${res.data?.total || 0} 条关系，原有 ${res.data?.preserved_existing || 0} 条关系已保留`)
+    await loadList()
+  } catch (err: any) {
+    if (err?.status === 409 || /重新预览/.test(String(err?.message || ''))) {
+      previewVisible.value = false
+      ElMessage.warning('生成范围已经发生变化，请重新预览后确认')
     }
   } finally {
     generating.value = false
@@ -256,4 +333,29 @@ onMounted(loadList)
 .relation-metrics .metric-value { font-size: 28px; }
 .filters { display: flex; gap: 10px; margin-bottom: 14px; }
 .filters .el-select { width: 140px; }
+.preview-alert { margin-bottom: 16px; }
+.preview-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.preview-summary > div {
+  padding: 14px;
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  background: var(--admin-bg-soft);
+}
+.preview-summary span { display: block; color: var(--admin-muted); font-size: 12px; }
+.preview-summary strong { display: block; margin-top: 6px; font-size: 24px; color: var(--admin-text); }
+.preview-breakdown { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+.impact-section { padding: 14px 0; border-top: 1px solid var(--admin-border); }
+.impact-section h3 { margin: 0 0 8px; font-size: 15px; }
+.impact-section p { margin: 0 0 8px; color: var(--admin-muted); font-size: 13px; }
+.impact-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.impact-list span { padding: 7px 10px; border-radius: 6px; background: var(--admin-bg-soft); font-size: 13px; }
+.warning-section h3 { color: var(--el-color-warning-dark-2); }
+@media (max-width: 720px) {
+  .preview-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 </style>

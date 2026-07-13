@@ -139,6 +139,23 @@ CREATE TABLE IF NOT EXISTS answer (
     UNIQUE(relation_id, question_seq)
 );
 
+CREATE TABLE IF NOT EXISTS personal_summary (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch_id      INTEGER NOT NULL,
+    user_id       INTEGER NOT NULL,
+    original_name TEXT    NOT NULL,
+    mime_type     TEXT    NOT NULL,
+    file_size     INTEGER NOT NULL,
+    file_data     BLOB    NOT NULL,
+    uploaded_by   INTEGER,
+    created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+    updated_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (batch_id) REFERENCES batch(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES app_user(id) ON DELETE CASCADE,
+    FOREIGN KEY (uploaded_by) REFERENCES app_user(id) ON DELETE SET NULL,
+    UNIQUE(batch_id, user_id)
+);
+
 -- 7. log 操作日志表
 CREATE TABLE IF NOT EXISTS log (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -206,6 +223,8 @@ CREATE INDEX IF NOT EXISTS idx_relation_batch_status ON relation(batch_id, statu
 CREATE INDEX IF NOT EXISTS idx_relation_batch_type_status ON relation(batch_id, eval_type, status);
 CREATE INDEX IF NOT EXISTS idx_answer_relation ON answer(relation_id);
 CREATE INDEX IF NOT EXISTS idx_answer_relation_total ON answer(relation_id, is_total);
+CREATE INDEX IF NOT EXISTS idx_personal_summary_batch ON personal_summary(batch_id);
+CREATE INDEX IF NOT EXISTS idx_personal_summary_user ON personal_summary(user_id);
 CREATE INDEX IF NOT EXISTS idx_self_question_batch ON self_question(batch_id);
 CREATE INDEX IF NOT EXISTS idx_self_question_user ON self_question(user_id);
 CREATE INDEX IF NOT EXISTS idx_self_question_batch_user ON self_question(batch_id, user_id);

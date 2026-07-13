@@ -10,7 +10,13 @@
         <el-upload action="" :before-upload="handleUpload" accept=".csv" :show-file-list="false">
           <el-button type="primary">导入 CSV</el-button>
         </el-upload>
-        <el-button type="danger" plain @click="handleClear" :disabled="list.length === 0">清除全部</el-button>
+        <el-button
+          type="danger"
+          plain
+          @click="handleClear"
+          :disabled="!canClear"
+          :title="canClear ? '' : '只有没有评价答案的草稿批次可以清空题目'"
+        >清除全部</el-button>
       </div>
     </section>
 
@@ -32,6 +38,11 @@
       <el-table :data="list" class="admin-table question-table" v-if="list.length > 0">
         <el-table-column prop="employee_no" label="工号" width="120" />
         <el-table-column prop="user_name" label="姓名" width="120" />
+        <el-table-column label="题目状态" width="100">
+          <template #default="{ row }">
+            <el-tag :type="row.locked ? 'warning' : 'success'">{{ row.locked ? '已锁定' : '已录入' }}</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="业绩评价">
           <template #default="{ row }">
             <div v-for="q in row.performance_questions" :key="q.answer_seq" class="q-line">
@@ -55,7 +66,8 @@
 
     <el-dialog v-model="previewVisible" title="导入结果" width="820px">
       <el-alert v-if="importResult" :type="importResult.failed > 0 ? 'warning' : 'success'" :closable="false" class="tip">
-        共 {{ importResult.total }} 行，成功 {{ importResult.success }} 行，失败 {{ importResult.failed }} 行
+        共 {{ importResult.total }} 行：写入 {{ importResult.success }}，未变化 {{ importResult.unchanged || 0 }}，
+        无题目跳过 {{ importResult.skipped_no_questions || 0 }}，失败 {{ importResult.failed }}
       </el-alert>
       <el-table v-if="importResult?.errors?.length" :data="importResult.errors" max-height="360" border>
         <el-table-column prop="row" label="行号" width="90" />
@@ -72,9 +84,9 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { selfQuestionApi, userApi } from '../api'
+import { batchApi, selfQuestionApi, userApi } from '../api'
 import { buildCsvText, parseCsvBuffer } from '../utils/csv'
 
 const props = defineProps<{ batchId: string }>()
@@ -82,19 +94,29 @@ const loading = ref(false)
 const list = ref<any[]>([])
 const previewVisible = ref(false)
 const importResult = ref<any>(null)
+const batch = ref<any>(null)
+const canClear = computed(() =>
+  batch.value?.status === 'draft'
+  && list.value.length > 0
+  && !list.value.some(row => row.locked)
+)
 
 async function loadList() {
   loading.value = true
   try {
-    const res: any = await selfQuestionApi.list(Number(props.batchId))
+    const [res, batchRes]: any = await Promise.all([
+      selfQuestionApi.list(Number(props.batchId)),
+      batchApi.get(Number(props.batchId)),
+    ])
     list.value = res.data || []
+    batch.value = batchRes.data
   } finally {
     loading.value = false
   }
 }
 
 async function downloadTemplate() {
-  const headers = ['姓名', '工号']
+  const headers = ['题目状态', '姓名', '工号']
   for (let i = 1; i <= 10; i++) headers.push(`业绩题${i}`, `业绩分值${i}`)
   for (let i = 1; i <= 5; i++) headers.push(`综合题${i}`, `综合分值${i}`)
 
@@ -108,12 +130,27 @@ async function downloadTemplate() {
     return
   }
 
-  const blankQuestionCells = Array.from({ length: headers.length - 2 }, () => '')
-  const rows = users.map((user: any) => [
-    user.name || '',
-    user.employee_no || '',
-    ...blankQuestionCells,
-  ])
+  const existingByEmployeeNo = new Map(list.value.map((row: any) => [String(row.employee_no), row]))
+  const rows = users.map((user: any) => {
+    const existing: any = existingByEmployeeNo.get(String(user.employee_no))
+    const questionCells = Array.from({ length: 30 }, () => '' as string | number)
+    for (const question of existing?.performance_questions || []) {
+      const offset = (Number(question.seq) - 1) * 2
+      questionCells[offset] = question.content
+      questionCells[offset + 1] = question.weight
+    }
+    for (const question of existing?.comprehensive_questions || []) {
+      const offset = 20 + (Number(question.seq) - 1) * 2
+      questionCells[offset] = question.content
+      questionCells[offset + 1] = question.weight
+    }
+    return [
+      existing ? (existing.locked ? '已锁定' : '已录入') : '未录入',
+      user.name || '',
+      user.employee_no || '',
+      ...questionCells,
+    ]
+  })
   const blob = new Blob([buildCsvText(headers, rows)], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')

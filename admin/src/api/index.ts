@@ -85,8 +85,11 @@ export const relationApi = {
   my(batchId: number) {
     return api.get('/relation/my', { params: { batch_id: batchId } })
   },
-  generate(batchId: number) {
-    return api.post(`/relation/generate/${batchId}`)
+  previewGenerate(batchId: number) {
+    return api.post(`/relation/generate/${batchId}/preview`)
+  },
+  generate(batchId: number, previewHash: string) {
+    return api.post(`/relation/generate/${batchId}`, { preview_hash: previewHash })
   },
   create(data: any) {
     return api.post('/relation/', data)
@@ -114,6 +117,23 @@ export const selfQuestionApi = {
   },
   delete(batchId: number) {
     return api.delete(`/self-question/${batchId}`)
+  },
+}
+
+export const personalSummaryApi = {
+  list(batchId: number, params?: any) {
+    return api.get(`/personal-summary/admin/${batchId}`, { params })
+  },
+  upload(batchId: number, userId: number, file: File) {
+    const form = new FormData()
+    form.append('file', file)
+    return api.put(`/personal-summary/admin/${batchId}/${userId}`, form)
+  },
+  delete(batchId: number, userId: number) {
+    return api.delete(`/personal-summary/admin/${batchId}/${userId}`)
+  },
+  download(batchId: number, userId: number) {
+    return api.get(`/personal-summary/admin/${batchId}/${userId}/download`, { responseType: 'blob' })
   },
 }
 

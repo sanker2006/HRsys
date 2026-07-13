@@ -8,7 +8,7 @@
     "build:admin": "npm --prefix admin run build",
     "build:h5": "npm --prefix h5 run build",
     "test:integration": "node scripts/integration-test.mjs",
-    "typecheck": "npm run build:backend && npm --prefix admin exec vue-tsc -b && npm --prefix h5 exec vue-tsc -b"
+    "typecheck": "npm run build:backend && npm --prefix admin exec -- vue-tsc -b admin/tsconfig.json && npm --prefix h5 exec -- vue-tsc -b h5/tsconfig.json"
   },
   "devDependencies": {
     "mysql2": "^3.22.5",

@@ -16,6 +16,8 @@
       </div>
     </section>
 
+    <PersonalSummaryDownload :relation-id="props.relationId" :summary="personalSummary" />
+
     <section v-if="quota && !isLeaderRelation" class="quota-note">
       <div class="quota-grid">
         <div class="quota-card high">
@@ -106,11 +108,13 @@ import { closeToast, showConfirmDialog, showLoadingToast, showToast } from 'vant
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { h5Api } from '../api'
+import PersonalSummaryDownload from '../components/PersonalSummaryDownload.vue'
 
 const props = defineProps<{ batchId: string; relationId: string }>()
 const router = useRouter()
 
 const relation = ref<any>(null)
+const personalSummary = ref<any>(null)
 const mode = ref('detail')
 const quota = ref<any>(null)
 const list = ref<any[]>([])
@@ -182,6 +186,7 @@ async function loadDetail() {
   const res: any = await h5Api.getRelationDetail(Number(props.relationId))
   const data = res.data || {}
   relation.value = data.relation
+  personalSummary.value = data.personal_summary || null
   mode.value = data.mode || 'detail'
   blockedReason.value = data.can_submit === false ? data.blocked_reason || '当前暂不能提交' : ''
   selfTotal.value = data.self_total ?? null

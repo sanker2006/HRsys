@@ -16,6 +16,7 @@ const base = `http://127.0.0.1:${port}/api/v1`;
 
 const adminPool = mysql.createPool({ uri: mysqlAdminUrl, connectionLimit: 1, multipleStatements: true });
 await adminPool.query(`CREATE DATABASE \`${testDbName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+const testPool = mysql.createPool({ uri: databaseUrl, connectionLimit: 2 });
 
 const server = spawn(process.execPath, ['dist/main.js'], {
   cwd: backendDir,
@@ -78,6 +79,21 @@ async function fail(path, options, expected) {
   assert.notEqual(res.code, 0, `${options?.method || 'GET'} ${path} should fail`);
   if (expected) assert.match(res.message, expected);
   return res;
+}
+
+async function uploadPersonalSummary(batchId, userId, token, content, fileName) {
+  const form = new FormData();
+  form.append('file', new Blob([content], {
+    type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  }), fileName);
+  const res = await fetch(`${base}/personal-summary/admin/${batchId}/${userId}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  const json = await res.json();
+  assert.equal(json.code, 0, `PUT personal summary: ${json.message}`);
+  return json.data;
 }
 
 function user(name, no, dept, level, phone, tail, extra = {}) {
@@ -171,6 +187,16 @@ async function h5Token(phone, tail) {
   return data.token;
 }
 
+async function previewAndGenerate(batchId, adminToken) {
+  const preview = await ok(`/relation/generate/${batchId}/preview`, { method: 'POST', token: adminToken });
+  const result = await ok(`/relation/generate/${batchId}`, {
+    method: 'POST',
+    token: adminToken,
+    body: { preview_hash: preview.preview_hash },
+  });
+  return { preview, result };
+}
+
 async function main() {
   await waitForServer();
 
@@ -217,7 +243,7 @@ async function main() {
   const batch = await ok('/batch/', {
     method: 'POST',
     token: adminToken,
-    body: { name: 'V2规则集成测试批次', period: '2026', start_time: past, end_time: future, peer_cross_dept: 0 },
+    body: { name: 'V2规则集成测试批次', period: '2026', start_time: past, end_time: future, peer_cross_dept: 1 },
   });
 
   const badImport = await ok('/self-question/import', {
@@ -240,7 +266,7 @@ async function main() {
   assert.equal(wrongTotalImport.failed, 1);
   assert.match(wrongTotalImport.errors[0].message, /业绩评价分值合计/);
 
-  const missingQuestionGenerate = await fail(`/relation/generate/${batch.id}`, { method: 'POST', token: adminToken }, /未录入题目/);
+  const missingQuestionGenerate = await fail(`/relation/generate/${batch.id}/preview`, { method: 'POST', token: adminToken }, /未录入题目/);
   assert(missingQuestionGenerate.data.missing_questions.length >= 6);
   assert.equal(missingQuestionGenerate.data.missing_questions.some(u => u.employee_no === 'S999'), false);
   const emptyRelationPage = await ok(`/relation/?batch_id=${batch.id}&pageSize=500`, { token: adminToken });
@@ -257,9 +283,9 @@ async function main() {
   assert.equal(importResult.success, 6);
   assert.equal(importResult.failed, 0);
 
-  const gen = await ok(`/relation/generate/${batch.id}`, { method: 'POST', token: adminToken });
+  const { result: gen } = await previewAndGenerate(batch.id, adminToken);
   assert.equal(gen.self, 6);
-  assert.equal(gen.peer, 10);
+  assert.equal(gen.peer, 12);
   assert.equal(gen.downward, 14);
   await ok(`/batch/${batch.id}/start`, { method: 'POST', token: adminToken });
 
@@ -286,6 +312,30 @@ async function main() {
   assert(peerToStaff2, 'staff peer relation exists');
   const peerToOwnManager = staff1Relations.list.find(r => r.eval_type === 'peer' && r.target_level === 'manager' && r.target_department === r.evaluator_department);
   assert(peerToOwnManager, 'staff peer relation to own manager exists');
+
+  const summaryBytes = Buffer.concat([
+    Buffer.from([0x50, 0x4b, 0x03, 0x04]),
+    Buffer.from('[Content_Types].xml word/document.xml integration summary'),
+  ]);
+  const summaryName = '研发员工2-个人总结.docx';
+  const uploadedSummary = await uploadPersonalSummary(
+    batch.id, peerToStaff2.target_id, adminToken, summaryBytes, summaryName
+  );
+  assert.equal(uploadedSummary.original_name, summaryName);
+  assert.equal(Number(uploadedSummary.file_size), summaryBytes.length);
+  const summaryPage = await ok(`/personal-summary/admin/${batch.id}?upload_status=uploaded`, { token: adminToken });
+  assert(summaryPage.list.some(row => row.user_id === peerToStaff2.target_id && row.has_summary));
+  const peerDetail = await ok(`/answer/relation/${peerToStaff2.id}`, { token: staff1Token });
+  assert.equal(peerDetail.personal_summary.original_name, summaryName);
+  await fail(`/personal-summary/relation/${peerToStaff2.id}/download`, { token: staff2Token }, /无权/);
+  const summaryDownload = await fetch(`${base}/personal-summary/relation/${peerToStaff2.id}/download`, {
+    headers: { Authorization: `Bearer ${staff1Token}` },
+  });
+  assert.equal(summaryDownload.status, 200);
+  assert.match(summaryDownload.headers.get('content-type') || '', /wordprocessingml/);
+  assert.equal(summaryDownload.headers.get('cache-control'), 'private, no-store');
+  assert.deepEqual(Buffer.from(await summaryDownload.arrayBuffer()), summaryBytes);
+
   await ok('/answer/detail', {
     method: 'POST',
     token: staff1Token,
@@ -378,6 +428,13 @@ async function main() {
   const managerBRels = await ok(`/relation/my?batch_id=${batch.id}`, { token: managerBToken });
   const bToS4 = managerBRels.list.find(r => r.eval_type === 'downward' && r.target_name === '销售员工1');
   await ok('/answer/detail', { method: 'POST', token: managerBToken, body: { relation_id: bToS4.id, answers: managerAnswers(65), draft: false } });
+  const bToManagerA = managerBRels.list.find(r => r.eval_type === 'peer' && r.target_name === '研发主管');
+  assert(bToManagerA, 'cross-department manager peer relation exists');
+  await ok('/answer/detail', {
+    method: 'POST',
+    token: managerBToken,
+    body: { relation_id: bToManagerA.id, answers: peerAnswers(0.8), draft: false },
+  });
 
   for (const [token, managerName] of [[managerAToken, '研发主管'], [managerBToken, '销售主管']]) {
     const my = await ok(`/relation/my?batch_id=${batch.id}`, { token });
@@ -405,6 +462,193 @@ async function main() {
   assert.equal(adminProgress.self.stats.completed, 6);
   assert(adminProgress.downward.stats.completed >= 6);
 
+  const unchangedImport = await ok('/self-question/import', {
+    method: 'POST',
+    token: adminToken,
+    body: { batch_id: batch.id, items: [questionRow('研发员工1', 'S001')] },
+  });
+  assert.equal(unchangedImport.success, 0);
+  assert.equal(unchangedImport.unchanged, 1);
+
+  const lockedQuestion = questionRow('研发员工1', 'S001');
+  lockedQuestion.综合题1 = '试图修改已经产生答案的题目';
+  const lockedImport = await ok('/self-question/import', {
+    method: 'POST',
+    token: adminToken,
+    body: { batch_id: batch.id, items: [lockedQuestion] },
+  });
+  assert.equal(lockedImport.success, 0);
+  assert.equal(lockedImport.locked, 1);
+  assert.equal(lockedImport.failed, 1);
+
+  const identityOnlyImport = await ok('/self-question/import', {
+    method: 'POST',
+    token: adminToken,
+    body: { batch_id: batch.id, items: [{ 姓名: '研发员工1', 工号: 'S001' }] },
+  });
+  assert.equal(identityOnlyImport.skipped_no_questions, 1);
+  assert.equal(identityOnlyImport.failed, 0);
+
+  await fail(`/self-question/${batch.id}`, { method: 'DELETE', token: adminToken }, /草稿批次|评价答案/);
+  await fail(`/relation/${bToManagerA.id}`, { method: 'DELETE', token: adminToken }, /不能删除/);
+
+  const [oldRelationSnapshot] = await testPool.query(
+    'SELECT id, evaluator_id, target_id, eval_type, status FROM relation WHERE batch_id = ? ORDER BY id',
+    [batch.id]
+  );
+  const [oldAnswerSnapshot] = await testPool.query(
+    `SELECT a.id, a.relation_id, a.question_seq, a.score, a.is_total, a.is_draft
+       FROM answer a JOIN relation r ON r.id = a.relation_id
+      WHERE r.batch_id = ? ORDER BY a.id`,
+    [batch.id]
+  );
+  const [oldQuestionSnapshot] = await testPool.query(
+    'SELECT * FROM self_question WHERE batch_id = ? ORDER BY id',
+    [batch.id]
+  );
+  const statisticsBeforeAddition = await ok(`/answer/admin/statistics/${batch.id}`, { token: adminToken });
+  const managerScoreBefore = statisticsBeforeAddition.rows.find(row => row.employee_no === 'M001').comprehensive_manager_peer_score;
+
+  const historicalBatch = await ok('/batch/', {
+    method: 'POST',
+    token: adminToken,
+    body: { name: '历史参与人员快照测试', period: '2026', start_time: past, end_time: future, peer_cross_dept: 0 },
+  });
+  await ok('/self-question/import', {
+    method: 'POST', token: adminToken, body: { batch_id: historicalBatch.id, items: importRows },
+  });
+  await previewAndGenerate(historicalBatch.id, adminToken);
+  await ok(`/batch/${historicalBatch.id}/close`, { method: 'POST', token: adminToken });
+  await fail(`/relation/generate/${historicalBatch.id}/preview`, { method: 'POST', token: adminToken }, /结束|过期/);
+
+  await ok('/department/', { method: 'POST', token: adminToken, body: { name: '运营部', sort_order: 3 } });
+  const newManager = await ok('/user/', {
+    method: 'POST', token: adminToken,
+    body: user('运营主管', 'M003', '运营部', 'manager', '13800000010', '0010'),
+  });
+  const newStaff1 = await ok('/user/', {
+    method: 'POST', token: adminToken,
+    body: user('运营员工1', 'S005', '运营部', 'staff', '13800000011', '0011'),
+  });
+  const newStaff2 = await ok('/user/', {
+    method: 'POST', token: adminToken,
+    body: user('运营员工2', 'S006', '运营部', 'staff', '13800000012', '0012'),
+  });
+  const incrementalQuestions = await ok('/self-question/import', {
+    method: 'POST',
+    token: adminToken,
+    body: {
+      batch_id: batch.id,
+      items: [
+        questionRow('运营主管', 'M003'),
+        questionRow('运营员工1', 'S005'),
+        questionRow('运营员工2', 'S006'),
+      ],
+    },
+  });
+  assert.equal(incrementalQuestions.success, 3);
+
+  const stalePreview = await ok(`/relation/generate/${batch.id}/preview`, { method: 'POST', token: adminToken });
+  assert.equal(stalePreview.new_participants.length, 3);
+  assert(stalePreview.new_relations.total > 0);
+  assert(stalePreview.existing_evaluators_with_new_tasks.some(item => item.employee_no === 'L001'));
+  assert(stalePreview.score_affected_users.some(item => item.employee_no === 'M001'));
+
+  await ok('/department/', { method: 'POST', token: adminToken, body: { name: '临时部门', sort_order: 99 } });
+  await ok(`/user/${newStaff2.id}`, {
+    method: 'PUT', token: adminToken, body: { department: '临时部门' },
+  });
+  await fail(`/relation/generate/${batch.id}`, {
+    method: 'POST', token: adminToken, body: { preview_hash: stalePreview.preview_hash },
+  }, /发生变化|重新预览/);
+  await ok(`/user/${newStaff2.id}`, {
+    method: 'PUT', token: adminToken, body: { department: '运营部' },
+  });
+
+  const incrementalPreview = await ok(`/relation/generate/${batch.id}/preview`, { method: 'POST', token: adminToken });
+  const concurrentGenerate = await Promise.all([
+    request(`/relation/generate/${batch.id}`, {
+      method: 'POST', token: adminToken, body: { preview_hash: incrementalPreview.preview_hash },
+    }),
+    request(`/relation/generate/${batch.id}`, {
+      method: 'POST', token: adminToken, body: { preview_hash: incrementalPreview.preview_hash },
+    }),
+  ]);
+  assert.equal(concurrentGenerate.filter(result => result.code === 0).length, 1);
+  assert.equal(concurrentGenerate.filter(result => result.code !== 0).length, 1);
+
+  const oldRelationIds = new Set(oldRelationSnapshot.map(row => row.id));
+  const oldAnswerIds = new Set(oldAnswerSnapshot.map(row => row.id));
+  const oldQuestionIds = new Set(oldQuestionSnapshot.map(row => row.id));
+  const [relationsAfterAddition] = await testPool.query(
+    'SELECT id, evaluator_id, target_id, eval_type, status FROM relation WHERE batch_id = ? ORDER BY id',
+    [batch.id]
+  );
+  const [answersAfterAddition] = await testPool.query(
+    `SELECT a.id, a.relation_id, a.question_seq, a.score, a.is_total, a.is_draft
+       FROM answer a JOIN relation r ON r.id = a.relation_id
+      WHERE r.batch_id = ? ORDER BY a.id`,
+    [batch.id]
+  );
+  const [questionsAfterAddition] = await testPool.query(
+    'SELECT * FROM self_question WHERE batch_id = ? ORDER BY id',
+    [batch.id]
+  );
+  assert.deepEqual(relationsAfterAddition.filter(row => oldRelationIds.has(row.id)), oldRelationSnapshot);
+  assert.deepEqual(answersAfterAddition.filter(row => oldAnswerIds.has(row.id)), oldAnswerSnapshot);
+  assert.deepEqual(questionsAfterAddition.filter(row => oldQuestionIds.has(row.id)), oldQuestionSnapshot);
+
+  const repeatedPreview = await ok(`/relation/generate/${batch.id}/preview`, { method: 'POST', token: adminToken });
+  assert.equal(repeatedPreview.new_relations.total, 0);
+  const repeatedGenerate = await ok(`/relation/generate/${batch.id}`, {
+    method: 'POST', token: adminToken, body: { preview_hash: repeatedPreview.preview_hash },
+  });
+  assert.equal(repeatedGenerate.total, 0);
+  const [duplicateRelations] = await testPool.query(
+    `SELECT batch_id, evaluator_id, target_id, eval_type, COUNT(*) AS total
+       FROM relation WHERE batch_id = ?
+      GROUP BY batch_id, evaluator_id, target_id, eval_type
+     HAVING COUNT(*) > 1`,
+    [batch.id]
+  );
+  assert.equal(duplicateRelations.length, 0);
+  const [generationLogs] = await testPool.query(
+    `SELECT id, detail FROM log
+      WHERE user_id = ? AND action = 'relation.incremental_generate' AND detail LIKE ?`,
+    [adminLogin.user.id, `%\"batch_id\":${batch.id}%`]
+  );
+  assert(generationLogs.length >= 2, 'incremental generation is written to the audit log');
+
+  const statisticsAfterGeneration = await ok(`/answer/admin/statistics/${batch.id}`, { token: adminToken });
+  assert.equal(
+    statisticsAfterGeneration.rows.find(row => row.employee_no === 'M001').comprehensive_manager_peer_score,
+    managerScoreBefore
+  );
+  assert(statisticsAfterGeneration.rows.some(row => row.employee_no === 'M003'));
+
+  const newManagerToken = await h5Token('13800000010', '0010');
+  const newManagerRelations = await ok(`/relation/my?batch_id=${batch.id}`, { token: newManagerToken });
+  const newManagerToOldManager = newManagerRelations.list.find(
+    relation => relation.eval_type === 'peer' && relation.target_name === '研发主管'
+  );
+  assert(newManagerToOldManager, 'new manager can evaluate an existing manager according to the full matrix');
+  await ok('/answer/detail', {
+    method: 'POST',
+    token: newManagerToken,
+    body: { relation_id: newManagerToOldManager.id, answers: peerAnswers(0.6), draft: false },
+  });
+  const statisticsAfterNewScore = await ok(`/answer/admin/statistics/${batch.id}`, { token: adminToken });
+  assert.notEqual(
+    statisticsAfterNewScore.rows.find(row => row.employee_no === 'M001').comprehensive_manager_peer_score,
+    managerScoreBefore
+  );
+
+  const activeQuestionParticipants = statisticsAfterNewScore.rows.map(row => row.employee_no);
+  assert(activeQuestionParticipants.includes(newManager.employee_no));
+  assert(activeQuestionParticipants.includes(newStaff1.employee_no));
+  const historicalStatistics = await ok(`/answer/admin/statistics/${historicalBatch.id}`, { token: adminToken });
+  assert.equal(historicalStatistics.rows.some(row => row.employee_no === 'M003'), false);
+
   const expiringBatch = await ok('/batch/', {
     method: 'POST',
     token: adminToken,
@@ -413,9 +657,17 @@ async function main() {
   await ok('/self-question/import', {
     method: 'POST',
     token: adminToken,
-    body: { batch_id: expiringBatch.id, items: importRows },
+    body: {
+      batch_id: expiringBatch.id,
+      items: [
+        ...importRows,
+        questionRow('运营主管', 'M003'),
+        questionRow('运营员工1', 'S005'),
+        questionRow('运营员工2', 'S006'),
+      ],
+    },
   });
-  await ok(`/relation/generate/${expiringBatch.id}`, { method: 'POST', token: adminToken });
+  await previewAndGenerate(expiringBatch.id, adminToken);
   await ok(`/batch/${expiringBatch.id}/start`, { method: 'POST', token: adminToken });
   const expiringRelations = await ok(`/relation/my?batch_id=${expiringBatch.id}`, { token: staff1Token });
   const expiredSelf = expiringRelations.list.find(r => r.eval_type === 'self' && r.target_name === '研发员工1');
@@ -513,6 +765,7 @@ async function main() {
 main().finally(async () => {
   server.kill();
   await sleep(200);
+  await testPool.end();
   await adminPool.query(`DROP DATABASE IF EXISTS \`${testDbName}\``);
   await adminPool.end();
 }).catch(err => {

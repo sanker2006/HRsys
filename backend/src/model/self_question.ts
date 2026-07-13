@@ -59,9 +59,10 @@ export interface SelfQuestionExport {
   performance_questions: QuestionItem[];
   comprehensive_questions: QuestionItem[];
   questions: QuestionItem[];
+  locked?: boolean;
 }
 
-type QuestionData = Partial<Record<`content_${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10}`, string | null>> &
+export type QuestionData = Partial<Record<`content_${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10}`, string | null>> &
   Partial<Record<`weight_${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10}`, number | null>> &
   Partial<Record<`comp_content_${1 | 2 | 3 | 4 | 5}`, string | null>> &
   Partial<Record<`comp_weight_${1 | 2 | 3 | 4 | 5}`, number | null>>;
@@ -79,6 +80,7 @@ export interface SelfQuestionImportError {
   employee_no?: string;
   user_name?: string;
   message: string;
+  code?: 'locked' | 'validation' | 'database';
 }
 
 export function toAnswerSeq(section: QuestionSection, seq: number): number {
@@ -149,6 +151,29 @@ function validateQuestionData(data: QuestionData): string | null {
     || validateSection(data, 'comprehensive', 30, 5, '综合评价');
 }
 
+const QUESTION_FIELDS = [
+  ...Array.from({ length: 10 }, (_, index) => `content_${index + 1}`),
+  ...Array.from({ length: 10 }, (_, index) => `weight_${index + 1}`),
+  ...Array.from({ length: 5 }, (_, index) => `comp_content_${index + 1}`),
+  ...Array.from({ length: 5 }, (_, index) => `comp_weight_${index + 1}`),
+] as const;
+
+function normalizeQuestionValue(field: string, value: unknown): string | number | null {
+  if (field.includes('weight_')) {
+    if (value === undefined || value === null || value === '') return null;
+    return Math.round(Number(value) * 10) / 10;
+  }
+  const text = String(value ?? '').trim();
+  return text || null;
+}
+
+function questionDataEquals(row: SelfQuestionRow, data: QuestionData): boolean {
+  return QUESTION_FIELDS.every(field =>
+    normalizeQuestionValue(field, row[field as keyof SelfQuestionRow])
+      === normalizeQuestionValue(field, data[field as keyof QuestionData])
+  );
+}
+
 export const SelfQuestionModel = {
   findByBatchAndUser(batchId: number, userId: number): Promise<SelfQuestionRow | undefined> {
     return queryOne<SelfQuestionRow>(
@@ -190,53 +215,100 @@ export const SelfQuestionModel = {
 
   async batchUpsert(batchId: number, questions: SelfQuestionImportItem[]): Promise<{
     success: number;
+    unchanged: number;
     errors: SelfQuestionImportError[];
   }> {
     const errors: SelfQuestionImportError[] = [];
     let success = 0;
+    let unchanged = 0;
 
     await transaction(async tx => {
       for (const q of questions) {
         const d = q.data;
         const validationError = validateQuestionData(d);
         if (validationError) {
-          errors.push({ row: q.row, employee_no: q.employee_no, user_name: q.user_name, message: validationError });
+          errors.push({ row: q.row, employee_no: q.employee_no, user_name: q.user_name, message: validationError, code: 'validation' });
           continue;
         }
 
         try {
-          await tx.execute('DELETE FROM self_question WHERE batch_id = ? AND user_id = ?', [batchId, q.user_id]);
-          await tx.execute(
-            `INSERT INTO self_question (batch_id, user_id,
-             content_1, content_2, content_3, content_4, content_5,
-             content_6, content_7, content_8, content_9, content_10,
-             weight_1, weight_2, weight_3, weight_4, weight_5,
-             weight_6, weight_7, weight_8, weight_9, weight_10,
-             comp_content_1, comp_content_2, comp_content_3, comp_content_4, comp_content_5,
-             comp_weight_1, comp_weight_2, comp_weight_3, comp_weight_4, comp_weight_5)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [batchId, q.user_id,
-             d.content_1 ?? null, d.content_2 ?? null, d.content_3 ?? null,
-             d.content_4 ?? null, d.content_5 ?? null, d.content_6 ?? null,
-             d.content_7 ?? null, d.content_8 ?? null, d.content_9 ?? null,
-             d.content_10 ?? null,
-             d.weight_1 ?? null, d.weight_2 ?? null, d.weight_3 ?? null,
-             d.weight_4 ?? null, d.weight_5 ?? null, d.weight_6 ?? null,
-             d.weight_7 ?? null, d.weight_8 ?? null, d.weight_9 ?? null,
-             d.weight_10 ?? null,
-             d.comp_content_1 ?? null, d.comp_content_2 ?? null, d.comp_content_3 ?? null,
-             d.comp_content_4 ?? null, d.comp_content_5 ?? null,
-             d.comp_weight_1 ?? null, d.comp_weight_2 ?? null, d.comp_weight_3 ?? null,
-             d.comp_weight_4 ?? null, d.comp_weight_5 ?? null]
+          const existing = await tx.queryOne<SelfQuestionRow>(
+            'SELECT * FROM self_question WHERE batch_id = ? AND user_id = ? FOR UPDATE',
+            [batchId, q.user_id]
           );
+          if (existing && questionDataEquals(existing, d)) {
+            unchanged++;
+            continue;
+          }
+
+          if (existing) {
+            const locked = await tx.queryOne<{ id: number }>(
+              `SELECT r.id
+                 FROM relation r
+                 LEFT JOIN answer a ON a.relation_id = r.id
+                WHERE r.batch_id = ? AND r.target_id = ?
+                  AND (r.status IN ('draft', 'completed') OR a.id IS NOT NULL)
+                LIMIT 1`,
+              [batchId, q.user_id]
+            );
+            if (locked) {
+              errors.push({
+                row: q.row,
+                employee_no: q.employee_no,
+                user_name: q.user_name,
+                message: '该人员已经产生评价草稿或正式答案，题目已锁定，不能修改',
+                code: 'locked',
+              });
+              continue;
+            }
+          }
+
+          const values = QUESTION_FIELDS.map(field => normalizeQuestionValue(field, d[field as keyof QuestionData]));
+          if (existing) {
+            await tx.execute(
+              `UPDATE self_question
+                  SET ${QUESTION_FIELDS.map(field => `${field} = ?`).join(', ')}, updated_at = CURRENT_TIMESTAMP
+                WHERE batch_id = ? AND user_id = ?`,
+              [...values, batchId, q.user_id]
+            );
+          } else {
+            await tx.execute(
+              `INSERT INTO self_question (batch_id, user_id, ${QUESTION_FIELDS.join(', ')})
+               VALUES (?, ?, ${QUESTION_FIELDS.map(() => '?').join(', ')})`,
+              [batchId, q.user_id, ...values]
+            );
+          }
           success++;
         } catch (err: any) {
-          errors.push({ row: q.row, employee_no: q.employee_no, user_name: q.user_name, message: err.message });
+          errors.push({ row: q.row, employee_no: q.employee_no, user_name: q.user_name, message: err.message, code: 'database' });
         }
       }
     });
 
-    return { success, errors };
+    return { success, unchanged, errors };
+  },
+
+  async findLockedTargetIds(batchId: number): Promise<Set<number>> {
+    const rows = await queryAll<{ target_id: number }>(
+      `SELECT DISTINCT r.target_id
+         FROM relation r
+         LEFT JOIN answer a ON a.relation_id = r.id
+        WHERE r.batch_id = ?
+          AND (r.status IN ('draft', 'completed') OR a.id IS NOT NULL)`,
+      [batchId]
+    );
+    return new Set(rows.map(row => row.target_id));
+  },
+
+  async batchHasAnswers(batchId: number): Promise<boolean> {
+    const row = await queryOne<{ total: number }>(
+      `SELECT COUNT(*) as total
+         FROM answer a
+         JOIN relation r ON r.id = a.relation_id
+        WHERE r.batch_id = ?`,
+      [batchId]
+    );
+    return Number(row?.total ?? 0) > 0;
   },
 
   deleteByBatchId(batchId: number): Promise<void> {
