@@ -23,6 +23,9 @@ backend/data/
 *.sqlite
 *.sqlite3
 
+# Local personnel documents (never commit)
+导入系统/
+
 # Screenshots and ad-hoc test captures
 *.png
 

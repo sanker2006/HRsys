@@ -682,6 +682,23 @@ async function main() {
     body: { relation_id: expiredSelf.id, answers: fullScoreAnswers(), draft: false },
   }, /已结束|结束时间/);
 
+  const summaryOnlyManager = await ok('/user/', {
+    method: 'POST',
+    token: adminToken,
+    body: user('总结测试主管', 'M004', '临时部门', 'manager', '13800000013', '0013'),
+  });
+  const activeSummaryRoster = await ok(`/personal-summary/admin/${batch.id}?pageSize=100`, { token: adminToken });
+  assert(
+    activeSummaryRoster.list.some(row => row.user_id === summaryOnlyManager.id),
+    'active manager without questions or relations is included in the open-batch summary roster'
+  );
+  const closedSummaryRoster = await ok(`/personal-summary/admin/${historicalBatch.id}?pageSize=100`, { token: adminToken });
+  assert.equal(
+    closedSummaryRoster.list.some(row => row.user_id === summaryOnlyManager.id),
+    false,
+    'manager added later is not included in a closed historical batch'
+  );
+
   const pressureTokens = [staff1Token, staff2Token, staff3Token, staff4Token, managerAToken, managerBToken, divisionToken, mainToken];
   const started = performance.now();
   const totalRequests = 300;

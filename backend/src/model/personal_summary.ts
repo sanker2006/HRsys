@@ -41,6 +41,14 @@ const PARTICIPANTS_SQL = `
   SELECT target_id AS user_id FROM relation WHERE batch_id = ?
   UNION
   SELECT user_id FROM personal_summary WHERE batch_id = ?
+  UNION
+  SELECT u.id AS user_id
+    FROM app_user u
+    JOIN batch b ON b.id = ?
+   WHERE b.status <> 'closed'
+     AND u.is_admin = 0
+     AND u.level = 'manager'
+     AND u.status = 'active'
 `;
 
 function filterSql(filters: PersonalSummaryFilters): { sql: string; params: Array<string> } {
@@ -80,7 +88,7 @@ export const PersonalSummaryModel = {
   async isParticipant(batchId: number, userId: number): Promise<boolean> {
     const row = await queryOne<{ user_id: number }>(
       `SELECT p.user_id FROM (${PARTICIPANTS_SQL}) p WHERE p.user_id = ? LIMIT 1`,
-      [batchId, batchId, batchId, userId]
+      [batchId, batchId, batchId, batchId, userId]
     );
     return !!row;
   },
@@ -96,7 +104,7 @@ export const PersonalSummaryModel = {
     summary: { total: number; uploaded: number; missing: number };
   }> {
     const filtered = filterSql(filters);
-    const baseParams = [batchId, batchId, batchId];
+    const baseParams = [batchId, batchId, batchId, batchId];
     const baseFrom = `
       FROM (${PARTICIPANTS_SQL}) p
       JOIN app_user u ON u.id = p.user_id
