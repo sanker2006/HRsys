@@ -5,6 +5,7 @@ import { UserModel } from '../model/user.js';
 import { success, fail } from '../utils/response.js';
 import { auth } from '../middleware/auth.js';
 import { admin } from '../middleware/admin.js';
+import { isBlankSelfQuestionImportRow } from '../utils/selfQuestionImport.js';
 import type { Context } from 'koa';
 
 const router = new Router({ prefix: '/api/v1/self-question' });
@@ -29,14 +30,6 @@ function pickValue(item: any, keys: string[]): any {
     }
   }
   return undefined;
-}
-
-function isBlankImportRow(item: any): boolean {
-  if (!item || typeof item !== 'object') return true;
-  return Object.entries(item).every(([key, value]) => {
-    if (key === '__row' || key === 'row' || key === '题目状态' || key === 'question_status') return true;
-    return value === undefined || value === null || String(value).trim() === '';
-  });
 }
 
 router.get('/:batchId', async (ctx: Context) => {
@@ -70,14 +63,14 @@ router.post('/import', admin, async (ctx: Context) => {
   if (!Array.isArray(items)) return fail(ctx, 'items 必须是数组');
 
   const importErrors: Array<{ row: number; employee_no?: string; user_name?: string; message: string }> = [];
-  const valid: Array<{ row: number; user_id: number; employee_no: string; user_name: string; data: any }> = [];
+  const valid: Array<{ row: number; user_id: number; employee_no: string; user_name: string; user_level: string; data: any }> = [];
   let skippedBlank = 0;
   let skippedNoQuestions = 0;
 
   for (let idx = 0; idx < items.length; idx++) {
     const item = items[idx];
     const row = Number(item.__row ?? item.row ?? idx + 2);
-    if (isBlankImportRow(item)) {
+    if (isBlankSelfQuestionImportRow(item)) {
       skippedBlank++;
       continue;
     }
@@ -153,7 +146,7 @@ router.post('/import', admin, async (ctx: Context) => {
       continue;
     }
 
-    valid.push({ row, user_id: user.id, employee_no: employeeNo, user_name: user.name, data });
+    valid.push({ row, user_id: user.id, employee_no: employeeNo, user_name: user.name, user_level: user.level, data });
   }
 
   const result = await SelfQuestionModel.batchUpsert(batch_id, valid);

@@ -11,7 +11,7 @@ const mysqlAdminUrl = process.env.MYSQL_ADMIN_URL || 'mysql://root:root@127.0.0.
 const testDatabaseUrl = new URL(mysqlAdminUrl);
 testDatabaseUrl.pathname = `/${testDbName}`;
 const databaseUrl = testDatabaseUrl.toString();
-const port = 4017;
+const port = Number(process.env.TEST_PORT || 43117);
 const base = `http://127.0.0.1:${port}/api/v1`;
 
 const adminPool = mysql.createPool({ uri: mysqlAdminUrl, connectionLimit: 1, multipleStatements: true });
@@ -144,6 +144,15 @@ function questionRow(name, no) {
   return row;
 }
 
+function performanceOnlyQuestionRow(name, no) {
+  const row = { 姓名: name, 工号: no };
+  for (let index = 0; index < 10; index++) {
+    row[`业绩题${index + 1}`] = `${name}-业绩题${index + 1}`;
+    row[`业绩分值${index + 1}`] = 10;
+  }
+  return row;
+}
+
 function fullScoreAnswers() {
   return [
     7.5, 6.5, 7, 8, 6, 7.5, 6.5, 7, 7, 7,
@@ -152,6 +161,10 @@ function fullScoreAnswers() {
     seq: index < 10 ? index + 1 : 100 + (index - 9),
     score,
   }));
+}
+
+function performanceOnlyAnswers() {
+  return Array.from({ length: 10 }, (_, index) => ({ seq: index + 1, score: 10 }));
 }
 
 function peerAnswers(ratio = 0.9) {
@@ -681,6 +694,94 @@ async function main() {
     token: staff1Token,
     body: { relation_id: expiredSelf.id, answers: fullScoreAnswers(), draft: false },
   }, /已结束|结束时间/);
+
+  await ok('/department/', { method: 'POST', token: adminToken, body: { name: '客户部', sort_order: 4 } });
+  const multiDepartmentStaff = await ok('/user/', {
+    method: 'POST', token: adminToken,
+    body: user('客户员工1', 'S007', '客户部', 'staff', '13800000014', '0014'),
+  });
+  const updatedManager = await ok(`/user/${newManager.id}`, {
+    method: 'PUT', token: adminToken,
+    body: { managed_departments: ['运营部', '客户部'] },
+  });
+  assert.deepEqual(updatedManager.managed_departments, ['客户部', '运营部']);
+  await fail('/user/', {
+    method: 'POST', token: adminToken,
+    body: user('冲突主管', 'M005', '临时部门', 'manager', '13800000015', '0015', { managed_departments: ['客户部'] }),
+  }, /客户部.*运营主管/);
+
+  const flexibleImport = await ok('/self-question/import', {
+    method: 'POST', token: adminToken,
+    body: {
+      batch_id: batch.id,
+      items: [
+        performanceOnlyQuestionRow('运营主管', 'M003'),
+        { ...questionRow('客户员工1', 'S007'), ' 题目状态 ': '未录入' },
+      ],
+    },
+  });
+  assert.equal(flexibleImport.success, 2);
+  const flexibleQuestions = await ok(`/self-question/${batch.id}`, { token: adminToken });
+  const managerQuestions = flexibleQuestions.find(row => row.employee_no === 'M003');
+  assert.equal(managerQuestions.score_mode, 'performance_only_100_0');
+  assert.equal(managerQuestions.performance_total, 100);
+  assert.equal(managerQuestions.comprehensive_total, 0);
+
+  const flexiblePreview = await ok(`/relation/generate/${batch.id}/preview`, { method: 'POST', token: adminToken });
+  assert(flexiblePreview.inapplicable_pending_relations > 0);
+  const flexibleGeneration = await ok(`/relation/generate/${batch.id}`, {
+    method: 'POST', token: adminToken, body: { preview_hash: flexiblePreview.preview_hash },
+  });
+  assert.equal(flexibleGeneration.removed_inapplicable, flexiblePreview.inapplicable_pending_relations);
+
+  const multiStaffToken = await h5Token('13800000014', '0014');
+  const multiStaffRelations = await ok(`/relation/my?batch_id=${batch.id}`, { token: multiStaffToken });
+  assert.equal(multiStaffRelations.list.some(row => row.eval_type === 'peer' && row.target_id === newManager.id), false);
+  const managerRelationsAfterScope = await ok(`/relation/my?batch_id=${batch.id}`, { token: newManagerToken });
+  assert(
+    managerRelationsAfterScope.list.some(row => row.eval_type === 'downward' && row.target_id === multiDepartmentStaff.id),
+    'manager evaluates staff in the second managed department'
+  );
+
+  const managerSelf = managerRelationsAfterScope.list.find(row => row.eval_type === 'self');
+  const managerSelfDetail = await ok(`/answer/relation/${managerSelf.id}`, { token: newManagerToken });
+  assert.equal(managerSelfDetail.performance_questions.length, 10);
+  assert.equal(managerSelfDetail.comprehensive_questions.length, 0);
+
+  for (const [token, employeeNo] of [
+    [await h5Token('13800000011', '0011'), 'S005'],
+    [await h5Token('13800000012', '0012'), 'S006'],
+    [multiStaffToken, 'S007'],
+  ]) {
+    const my = await ok(`/relation/my?batch_id=${batch.id}`, { token });
+    const self = my.list.find(row => row.eval_type === 'self' && row.evaluator_id === row.target_id);
+    assert(self, `${employeeNo} self relation exists`);
+    await ok('/answer/self', { method: 'POST', token, body: { relation_id: self.id, answers: fullScoreAnswers(), draft: false } });
+  }
+  await ok('/answer/self', {
+    method: 'POST', token: newManagerToken,
+    body: { relation_id: managerSelf.id, answers: performanceOnlyAnswers(), draft: false },
+  });
+
+  const refreshedManagerRelations = await ok(`/relation/my?batch_id=${batch.id}`, { token: newManagerToken });
+  const managedStaffScores = new Map([['运营员工1', 90], ['运营员工2', 75], ['客户员工1', 65]]);
+  for (const relation of refreshedManagerRelations.list.filter(row => row.eval_type === 'downward' && row.target_level === 'staff')) {
+    await ok('/answer/detail', {
+      method: 'POST', token: newManagerToken,
+      body: { relation_id: relation.id, answers: managerAnswers(managedStaffScores.get(relation.target_name)), draft: false },
+    });
+  }
+  const mainRelationsAfterScope = await ok(`/relation/my?batch_id=${batch.id}`, { token: mainToken });
+  const mainToPerformanceOnlyManager = mainRelationsAfterScope.list.find(row => row.eval_type === 'downward' && row.target_id === newManager.id);
+  await ok('/answer/detail', {
+    method: 'POST', token: mainToken,
+    body: { relation_id: mainToPerformanceOnlyManager.id, answers: performanceOnlyAnswers(), draft: false },
+  });
+  const flexibleStatistics = await ok(`/answer/admin/statistics/${batch.id}`, { token: adminToken });
+  const flexibleManagerStatistics = flexibleStatistics.rows.find(row => row.employee_no === 'M003');
+  assert.equal(flexibleManagerStatistics.final_score, 100);
+  assert.equal(flexibleManagerStatistics.comprehensive_score, null);
+  assert.equal(flexibleManagerStatistics.missing_items.some(item => item.startsWith('综合')), false);
 
   const summaryOnlyManager = await ok('/user/', {
     method: 'POST',

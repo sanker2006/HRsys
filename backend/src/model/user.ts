@@ -1,4 +1,4 @@
-import { execute, queryAll, queryOne, transaction } from '../db/query.js';
+import { execute, queryAll, queryOne, transaction, type DbExecutor } from '../db/query.js';
 
 export type UserLevel = 'main_leader' | 'division_leader' | 'manager' | 'staff' | 'admin' | 'leader';
 
@@ -51,6 +51,17 @@ function normalizeStatus(status: unknown): 'active' | 'inactive' {
   return 'active';
 }
 
+function supportsManagedDepartments(level: string): boolean {
+  return ['division_leader', 'manager'].includes(normalizeLevel(level));
+}
+
+export function effectiveManagedDepartments(user: { level: string; department: string; managed_departments?: string[] }): string[] {
+  if (!supportsManagedDepartments(user.level)) return [];
+  const configured = [...new Set((user.managed_departments ?? []).map(department => String(department).trim()).filter(Boolean))];
+  if (user.level === 'manager' && configured.length === 0 && user.department) return [user.department];
+  return configured;
+}
+
 async function getManagedDepartments(userId: number): Promise<string[]> {
   return (await queryAll<{ department: string }>(
     'SELECT department FROM division_leader_department WHERE user_id = ? ORDER BY department',
@@ -66,20 +77,63 @@ async function attachManagedDepartments<T extends UserRow>(user: T | undefined):
 }
 
 async function attachMany(users: UserRow[]): Promise<UserRow[]> {
-  return Promise.all(users.map(async u => (await attachManagedDepartments(u))!));
+  if (users.length === 0) return users;
+  const placeholders = users.map(() => '?').join(', ');
+  const rows = await queryAll<{ user_id: number; department: string }>(
+    `SELECT user_id, department FROM division_leader_department WHERE user_id IN (${placeholders}) ORDER BY user_id, department`,
+    users.map(user => user.id)
+  );
+  const managed = new Map<number, string[]>();
+  for (const row of rows) {
+    if (!managed.has(row.user_id)) managed.set(row.user_id, []);
+    managed.get(row.user_id)!.push(row.department);
+  }
+  return users.map(user => ({
+    ...user,
+    level: normalizeLevel(user.level),
+    managed_departments: managed.get(user.id) ?? [],
+  }));
 }
 
-async function replaceManagedDepartments(userId: number, departments: string[] = []): Promise<void> {
-  await execute('DELETE FROM division_leader_department WHERE user_id = ?', [userId]);
+async function replaceManagedDepartments(db: Pick<DbExecutor, 'execute'>, userId: number, departments: string[] = []): Promise<void> {
+  await db.execute('DELETE FROM division_leader_department WHERE user_id = ?', [userId]);
   const unique = [...new Set(departments.map(d => String(d).trim()).filter(Boolean))];
   for (const dept of unique) {
-    const existing = await queryOne<{ id: number }>(
-      'SELECT id FROM division_leader_department WHERE user_id = ? AND department = ?',
-      [userId, dept]
-    );
-    if (!existing) {
-      await execute('INSERT INTO division_leader_department (user_id, department) VALUES (?, ?)', [userId, dept]);
-    }
+    await db.execute('INSERT INTO division_leader_department (user_id, department) VALUES (?, ?)', [userId, dept]);
+  }
+}
+
+async function assertManagerDepartmentsAvailable(
+  db: Pick<DbExecutor, 'queryAll'>,
+  candidate: Pick<UserRow, 'id' | 'level' | 'department' | 'status' | 'managed_departments'>
+): Promise<void> {
+  if (candidate.level !== 'manager' || candidate.status !== 'active') return;
+  const departments = effectiveManagedDepartments(candidate);
+  if (departments.length === 0) return;
+
+  const departmentPlaceholders = departments.map(() => '?').join(', ');
+  await db.queryAll<{ name: string }>(
+    `SELECT name FROM department WHERE name IN (${departmentPlaceholders}) FOR UPDATE`,
+    departments
+  );
+  const rows = await db.queryAll<UserRow & { managed_department: string | null }>(
+    `SELECT u.*, d.department as managed_department
+      FROM app_user u
+      LEFT JOIN division_leader_department d ON d.user_id = u.id
+      WHERE u.level = 'manager' AND u.status = 'active' AND u.id != ?
+      ORDER BY u.id
+      FOR UPDATE`,
+    [candidate.id]
+  );
+  const byManager = new Map<number, UserRow>();
+  for (const row of rows) {
+    const manager = byManager.get(row.id) ?? { ...row, managed_departments: [] };
+    if (row.managed_department) manager.managed_departments!.push(row.managed_department);
+    byManager.set(row.id, manager);
+  }
+  for (const manager of byManager.values()) {
+    const conflict = effectiveManagedDepartments(manager).find(department => departments.includes(department));
+    if (conflict) throw new Error(`部门「${conflict}」已由部门负责人「${manager.name}」负责`);
   }
 }
 
@@ -180,11 +234,20 @@ export const UserModel = {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [data.name, data.employee_no, data.department, data.position, level, data.phone, data.id_card_tail, data.password, normalizeStatus(data.status), data.is_admin ?? 0]
       );
+      const created = await tx.queryOne<UserRow>('SELECT * FROM app_user WHERE employee_no = ? FOR UPDATE', [data.employee_no]);
+      if (!created) throw new Error('创建用户后无法获取记录');
+      const managedDepartments = supportsManagedDepartments(level) ? (data.managed_departments ?? []) : [];
+      await assertManagerDepartmentsAvailable(tx, {
+        ...created,
+        level,
+        status: normalizeStatus(data.status),
+        managed_departments: managedDepartments,
+      });
+      await replaceManagedDepartments(tx, created.id, managedDepartments);
     });
 
     const user = await this.findByEmployeeNo(data.employee_no);
     if (!user) throw new Error('创建用户后无法获取记录');
-    if (level === 'division_leader') await replaceManagedDepartments(user.id, data.managed_departments ?? []);
     return (await this.findById(user.id))!;
   },
 
@@ -205,6 +268,7 @@ export const UserModel = {
     }
 
     await transaction(async tx => {
+      await tx.queryOne<UserRow>('SELECT * FROM app_user WHERE id = ? FOR UPDATE', [id]);
       const fields: string[] = [];
       const params: any[] = [];
       if (data.name !== undefined) { fields.push('name = ?'); params.push(data.name); }
@@ -221,11 +285,19 @@ export const UserModel = {
         params.push(id);
         await tx.execute(`UPDATE app_user SET ${fields.join(', ')} WHERE id = ?`, params);
       }
+      const nextManagedDepartments = supportsManagedDepartments(nextLevel)
+        ? (data.managed_departments ?? current.managed_departments ?? [])
+        : [];
+      await assertManagerDepartmentsAvailable(tx, {
+        ...current,
+        id,
+        level: nextLevel,
+        department: data.department ?? current.department,
+        status: data.status !== undefined ? normalizeStatus(data.status) : current.status,
+        managed_departments: nextManagedDepartments,
+      });
+      await replaceManagedDepartments(tx, id, nextManagedDepartments);
     });
-
-    if (data.managed_departments !== undefined || nextLevel !== 'division_leader') {
-      await replaceManagedDepartments(id, nextLevel === 'division_leader' ? (data.managed_departments ?? current.managed_departments ?? []) : []);
-    }
   },
 
   delete(id: number): Promise<void> {
@@ -254,13 +326,7 @@ export const UserModel = {
           continue;
         }
         await assertSingleMainLeader(level);
-        await execute(
-          `INSERT INTO app_user (name, employee_no, department, position, level, phone, id_card_tail, password, status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [u.name, u.employee_no, u.department, u.position, level, u.phone, u.id_card_tail, u.password, normalizeStatus(u.status)]
-        );
-        const created = await this.findByEmployeeNo(u.employee_no);
-        if (created && level === 'division_leader') await replaceManagedDepartments(created.id, u.managed_departments ?? []);
+        await this.create({ ...u, level });
         success++;
       } catch (err: any) {
         errors.push({ row: u.source_row ?? i + 2, message: err.message });

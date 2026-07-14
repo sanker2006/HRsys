@@ -32,7 +32,7 @@
       </template>
 
       <el-alert type="info" :closable="false" class="tip">
-        模板为单表双区：姓名、工号、业绩题1-10/业绩分值1-10、综合题1-5/综合分值1-5。后端会校验工号存在、姓名匹配、业绩合计 70 分、综合合计 30 分，分值最多 1 位小数。
+        模板为单表双区：姓名、工号、业绩题1-10/业绩分值1-10、综合题1-5/综合分值1-5。员工固定为 70/30；部门负责人支持 70/30 或 100/0，分值最多 1 位小数。
       </el-alert>
 
       <el-table :data="list" class="admin-table question-table" v-if="list.length > 0">
@@ -87,7 +87,8 @@
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { batchApi, selfQuestionApi, userApi } from '../api'
-import { buildCsvText, parseCsvBuffer } from '../utils/csv'
+import { parseCsvBuffer } from '../utils/csv'
+import { buildSelfQuestionTemplate } from '../utils/selfQuestionTemplate'
 
 const props = defineProps<{ batchId: string }>()
 const loading = ref(false)
@@ -116,10 +117,6 @@ async function loadList() {
 }
 
 async function downloadTemplate() {
-  const headers = ['题目状态', '姓名', '工号']
-  for (let i = 1; i <= 10; i++) headers.push(`业绩题${i}`, `业绩分值${i}`)
-  for (let i = 1; i <= 5; i++) headers.push(`综合题${i}`, `综合分值${i}`)
-
   const res: any = await userApi.export({ status: 'active' })
   const users = (res.data || [])
     .filter((user: any) => ['manager', 'staff'].includes(user.level) && !Number(user.is_admin || 0))
@@ -130,28 +127,7 @@ async function downloadTemplate() {
     return
   }
 
-  const existingByEmployeeNo = new Map(list.value.map((row: any) => [String(row.employee_no), row]))
-  const rows = users.map((user: any) => {
-    const existing: any = existingByEmployeeNo.get(String(user.employee_no))
-    const questionCells = Array.from({ length: 30 }, () => '' as string | number)
-    for (const question of existing?.performance_questions || []) {
-      const offset = (Number(question.seq) - 1) * 2
-      questionCells[offset] = question.content
-      questionCells[offset + 1] = question.weight
-    }
-    for (const question of existing?.comprehensive_questions || []) {
-      const offset = 20 + (Number(question.seq) - 1) * 2
-      questionCells[offset] = question.content
-      questionCells[offset + 1] = question.weight
-    }
-    return [
-      existing ? (existing.locked ? '已锁定' : '已录入') : '未录入',
-      user.name || '',
-      user.employee_no || '',
-      ...questionCells,
-    ]
-  })
-  const blob = new Blob([buildCsvText(headers, rows)], { type: 'text/csv;charset=utf-8;' })
+  const blob = new Blob([buildSelfQuestionTemplate(users, list.value)], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url

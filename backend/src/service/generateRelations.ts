@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { queryAll, queryOne, transaction, type DbExecutor } from '../db/query.js';
 import { BatchModel, type BatchRow } from '../model/batch.js';
-import { SelfQuestionModel, type SelfQuestionRow } from '../model/self_question.js';
+import { getQuestionScorePolicy, type QuestionScoreMode, type SelfQuestionRow } from '../model/self_question.js';
+import { effectiveManagedDepartments } from '../model/user.js';
 
 export interface MissingQuestionUser {
   user_id: number;
@@ -11,7 +12,7 @@ export interface MissingQuestionUser {
   level: string;
 }
 
-type RelationInput = {
+export type RelationInput = {
   batch_id: number;
   evaluator_id: number;
   target_id: number;
@@ -19,7 +20,7 @@ type RelationInput = {
   eval_type: 'self' | 'peer' | 'downward';
 };
 
-type GenerationUser = {
+export type GenerationUser = {
   id: number;
   name: string;
   employee_no: string;
@@ -62,6 +63,7 @@ export interface RelationGenerationPreview {
   desired_total: number;
   skipped_existing: number;
   obsolete_relations: number;
+  inapplicable_pending_relations: number;
   new_relations: { total: number; self: number; peer: number; downward: number };
   new_participants: GenerationUserImpact[];
   existing_evaluators_with_new_tasks: GenerationUserImpact[];
@@ -77,6 +79,7 @@ export interface GenResult {
   skipped_existing: number;
   preserved_existing: number;
   obsolete_relations: number;
+  removed_inapplicable: number;
 }
 
 export class RelationGenerationError extends Error {
@@ -111,12 +114,31 @@ function userImpact(user: GenerationUser): GenerationUserImpact {
   };
 }
 
-function buildDesiredRelations(batch: BatchRow, matrix: MatrixRow[], users: GenerationUser[]): RelationInput[] {
+export function buildDesiredRelations(
+  batch: BatchRow,
+  matrix: MatrixRow[],
+  users: GenerationUser[],
+  scoreModes: Map<number, QuestionScoreMode>
+): RelationInput[] {
   const mainLeaders = users.filter(user => user.level === 'main_leader');
   const divisionLeaders = users.filter(user => user.level === 'division_leader');
   const managers = users.filter(user => user.level === 'manager');
   const staff = users.filter(user => user.level === 'staff');
+  const managerByDepartment = new Map<string, GenerationUser>();
+  const managerDepartments = new Map<number, Set<string>>();
+  for (const manager of managers) {
+    const departments = new Set(effectiveManagedDepartments(manager));
+    managerDepartments.set(manager.id, departments);
+    for (const department of departments) {
+      const existing = managerByDepartment.get(department);
+      if (existing && existing.id !== manager.id) {
+        throw new RelationGenerationError(`部门「${department}」同时配置了部门负责人「${existing.name}」和「${manager.name}」`, 409);
+      }
+      managerByDepartment.set(department, manager);
+    }
+  }
   const desired = new Map<string, RelationInput>();
+  const supportsComprehensive = (target: GenerationUser) => scoreModes.get(target.id) !== 'performance_only_100_0';
   const add = (evaluator: GenerationUser, target: GenerationUser, evalType: RelationInput['eval_type']) => {
     const row: RelationInput = {
       batch_id: batch.id,
@@ -137,6 +159,7 @@ function buildDesiredRelations(batch: BatchRow, matrix: MatrixRow[], users: Gene
       for (const target of managers) {
         if (evaluator.id === target.id) continue;
         if (batch.peer_cross_dept !== 1 && evaluator.department !== target.department) continue;
+        if (!supportsComprehensive(target)) continue;
         add(evaluator, target, 'peer');
       }
     }
@@ -152,15 +175,16 @@ function buildDesiredRelations(batch: BatchRow, matrix: MatrixRow[], users: Gene
 
   if (isEnabled(matrix, 'staff', 'manager', 'peer')) {
     for (const evaluator of staff) {
-      const manager = managers.find(target => target.department === evaluator.department);
-      if (manager) add(evaluator, manager, 'peer');
+      const manager = managerByDepartment.get(evaluator.department);
+      if (manager && supportsComprehensive(manager)) add(evaluator, manager, 'peer');
     }
   }
 
   if (isEnabled(matrix, 'manager', 'staff', 'downward')) {
     for (const manager of managers) {
+      const departments = managerDepartments.get(manager.id) ?? new Set<string>();
       for (const target of staff) {
-        if (manager.department === target.department) add(manager, target, 'downward');
+        if (departments.has(target.department)) add(manager, target, 'downward');
       }
     }
   }
@@ -187,16 +211,12 @@ function buildDesiredRelations(batch: BatchRow, matrix: MatrixRow[], users: Gene
   return [...desired.values()].sort((a, b) => relationKey(a).localeCompare(relationKey(b)));
 }
 
-function validQuestionUsers(rows: SelfQuestionRow[]): Set<number> {
-  const exports = SelfQuestionModel.toExportFormat(rows);
-  return new Set(exports.filter(row => {
-    const performance = row.performance_questions.reduce((sum, item) => sum + Number(item.weight), 0);
-    const comprehensive = row.comprehensive_questions.reduce((sum, item) => sum + Number(item.weight), 0);
-    return row.performance_questions.length > 0
-      && row.comprehensive_questions.length > 0
-      && Math.abs(performance - 70) <= 0.001
-      && Math.abs(comprehensive - 30) <= 0.001;
-  }).map(row => row.user_id));
+function questionPolicies(rows: SelfQuestionRow[], users: GenerationUser[]): Map<number, ReturnType<typeof getQuestionScorePolicy>> {
+  const usersById = new Map(users.map(user => [user.id, user]));
+  return new Map(rows.map(row => {
+    const user = usersById.get(row.user_id);
+    return [row.user_id, getQuestionScorePolicy(row, user?.level ?? 'staff')];
+  }));
 }
 
 function questionFingerprint(row: SelfQuestionRow): unknown[] {
@@ -256,17 +276,26 @@ async function loadState(batchId: number, db: ReadDb) {
       WHERE r.batch_id = ?`,
     [batchId]
   )).map(row => row.target_id));
+  const answeredRelationIds = new Set((await db.queryAll<{ relation_id: number }>(
+    `SELECT DISTINCT r.id as relation_id
+       FROM relation r
+       JOIN answer a ON a.relation_id = r.id
+      WHERE r.batch_id = ?`,
+    [batchId]
+  )).map(row => row.relation_id));
 
-  return { batch, users, matrix, questions, existing, answeredTargets };
+  return { batch, users, matrix, questions, existing, answeredTargets, answeredRelationIds };
 }
 
 async function calculatePreview(batchId: number, db: ReadDb) {
   const state = await loadState(batchId, db);
-  const desired = buildDesiredRelations(state.batch, state.matrix, state.users);
+  const policies = questionPolicies(state.questions, state.users);
+  const scoreModes = new Map([...policies].map(([userId, policy]) => [userId, policy.score_mode]));
+  const desired = buildDesiredRelations(state.batch, state.matrix, state.users, scoreModes);
   const existingKeys = new Set(state.existing.map(relationKey));
   const desiredKeys = new Set(desired.map(relationKey));
   const missingRelations = desired.filter(row => !existingKeys.has(relationKey(row)));
-  const validQuestions = validQuestionUsers(state.questions);
+  const validQuestions = new Set([...policies].filter(([, policy]) => policy.valid).map(([userId]) => userId));
   const missingQuestions = state.users
     .filter(user => ['manager', 'staff'].includes(user.level) && !validQuestions.has(user.id))
     .map(user => userImpact(user));
@@ -282,6 +311,15 @@ async function calculatePreview(batchId: number, db: ReadDb) {
     desiredParticipants.add(row.target_id);
   }
   const usersById = new Map(state.users.map(user => [user.id, user]));
+  const inapplicableRelations = state.existing.filter(row => {
+    const target = usersById.get(row.target_id);
+    return row.eval_type === 'peer'
+      && target?.level === 'manager'
+      && scoreModes.get(row.target_id) === 'performance_only_100_0'
+      && row.status === 'pending'
+      && !state.answeredRelationIds.has(row.id);
+  });
+  const inapplicableIds = new Set(inapplicableRelations.map(row => row.id));
   const newParticipants = [...desiredParticipants]
     .filter(id => !existingParticipants.has(id))
     .map(id => usersById.get(id))
@@ -313,6 +351,7 @@ async function calculatePreview(batchId: number, db: ReadDb) {
     matrix: state.matrix.map(row => [row.from_role, row.to_role, row.eval_type]),
     questions: state.questions.map(questionFingerprint),
     relations: state.existing.map(row => [row.id, relationKey(row), row.status]),
+    answered_relations: [...state.answeredRelationIds].sort((a, b) => a - b),
   };
   const previewHash = createHash('sha256').update(JSON.stringify(fingerprint)).digest('hex');
   const countType = (type: RelationInput['eval_type']) => missingRelations.filter(row => row.eval_type === type).length;
@@ -323,7 +362,8 @@ async function calculatePreview(batchId: number, db: ReadDb) {
     existing_total: state.existing.length,
     desired_total: desired.length,
     skipped_existing: desired.length - missingRelations.length,
-    obsolete_relations: state.existing.filter(row => !desiredKeys.has(relationKey(row))).length,
+    obsolete_relations: state.existing.filter(row => !desiredKeys.has(relationKey(row)) && !inapplicableIds.has(row.id)).length,
+    inapplicable_pending_relations: inapplicableRelations.length,
     new_relations: {
       total: missingRelations.length,
       self: countType('self'),
@@ -336,7 +376,7 @@ async function calculatePreview(batchId: number, db: ReadDb) {
     missing_questions: missingQuestions,
   };
 
-  return { preview, missingRelations };
+  return { preview, missingRelations, inapplicableRelationIds: inapplicableRelations.map(row => row.id) };
 }
 
 export async function buildRelationPreview(batchId: number): Promise<RelationGenerationPreview> {
@@ -350,7 +390,7 @@ export async function generateRelations(
 ): Promise<GenResult> {
   return transaction(async tx => {
     await tx.queryOne<{ id: number }>('SELECT id FROM batch WHERE id = ? FOR UPDATE', [batchId]);
-    const { preview, missingRelations } = await calculatePreview(batchId, tx);
+    const { preview, missingRelations, inapplicableRelationIds } = await calculatePreview(batchId, tx);
     if (preview.missing_questions.length > 0) {
       throw new RelationGenerationError('存在未录入题目的人员，无法生成评价关系', 409, {
         missing_questions: preview.missing_questions,
@@ -360,6 +400,10 @@ export async function generateRelations(
       throw new RelationGenerationError('人员、题目、矩阵或评价关系已发生变化，请重新预览', 409, {
         expected_hash: preview.preview_hash,
       });
+    }
+
+    for (const relationId of inapplicableRelationIds) {
+      await tx.execute('DELETE FROM relation WHERE id = ? AND status = ?', [relationId, 'pending']);
     }
 
     for (const row of missingRelations) {
@@ -376,8 +420,9 @@ export async function generateRelations(
       peer: missingRelations.filter(row => row.eval_type === 'peer').length,
       downward: missingRelations.filter(row => row.eval_type === 'downward').length,
       skipped_existing: preview.skipped_existing,
-      preserved_existing: preview.existing_total,
+      preserved_existing: preview.existing_total - inapplicableRelationIds.length,
       obsolete_relations: preview.obsolete_relations,
+      removed_inapplicable: inapplicableRelationIds.length,
     };
     await tx.execute(
       'INSERT INTO log (user_id, action, ip, detail) VALUES (?, ?, ?, ?)',

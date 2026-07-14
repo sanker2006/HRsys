@@ -40,6 +40,7 @@ export interface SelfQuestionRow {
   updated_at: string;
   user_name?: string;
   employee_no?: string;
+  user_level?: string;
 }
 
 export interface QuestionItem {
@@ -59,7 +60,19 @@ export interface SelfQuestionExport {
   performance_questions: QuestionItem[];
   comprehensive_questions: QuestionItem[];
   questions: QuestionItem[];
+  performance_total: number;
+  comprehensive_total: number;
+  score_mode: QuestionScoreMode;
   locked?: boolean;
+}
+
+export type QuestionScoreMode = 'standard_70_30' | 'performance_only_100_0' | 'invalid';
+
+export interface QuestionScorePolicy {
+  performance_total: number;
+  comprehensive_total: number;
+  score_mode: QuestionScoreMode;
+  valid: boolean;
 }
 
 export type QuestionData = Partial<Record<`content_${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10}`, string | null>> &
@@ -72,6 +85,7 @@ export interface SelfQuestionImportItem {
   user_id: number;
   employee_no: string;
   user_name: string;
+  user_level: string;
   data: QuestionData;
 }
 
@@ -118,37 +132,68 @@ function collectQuestions(row: SelfQuestionRow, section: QuestionSection): Quest
   return items;
 }
 
-function validateSection(
+function inspectSection(
   data: QuestionData,
   section: QuestionSection,
-  requiredTotal: number,
   maxCount: number,
   label: string
-): string | null {
+): { total: number; count: number; error: string | null } {
   const weights: number[] = [];
   for (let i = 1; i <= maxCount; i++) {
     const contentKey = section === 'performance' ? `content_${i}` : `comp_content_${i}`;
     const weightKey = section === 'performance' ? `weight_${i}` : `comp_weight_${i}`;
-    const content = data[contentKey as keyof QuestionData];
+    const content = String(data[contentKey as keyof QuestionData] ?? '').trim();
     const weightRaw = data[weightKey as keyof QuestionData];
+    const hasWeight = weightRaw !== undefined && weightRaw !== null && weightRaw !== '';
+    if (!content && hasWeight) return { total: 0, count: 0, error: `${label}第 ${i} 题填写了分值但没有题目内容` };
     if (!content) continue;
     const weight = Number(weightRaw ?? 0);
-    if (!Number.isFinite(weight) || weight <= 0) return `${label}第 ${i} 题分值必须大于 0`;
-    if (!hasOneDecimalAtMost(weight)) return `${label}第 ${i} 题分值最多支持 1 位小数`;
+    if (!Number.isFinite(weight) || weight <= 0) return { total: 0, count: 0, error: `${label}第 ${i} 题分值必须大于 0` };
+    if (!hasOneDecimalAtMost(weight)) return { total: 0, count: 0, error: `${label}第 ${i} 题分值最多支持 1 位小数` };
     weights.push(weight);
   }
+  return { total: weights.reduce((a, b) => a + b, 0), count: weights.length, error: null };
+}
 
-  if (weights.length === 0) return `${label}至少需要 1 道题目`;
-  const sum = weights.reduce((a, b) => a + b, 0);
-  if (Math.abs(sum - requiredTotal) > 0.001) {
-    return `${label}分值合计 ${sum.toFixed(1)}，必须等于 ${requiredTotal}`;
+function totalsMatch(actual: number, expected: number): boolean {
+  return Math.abs(actual - expected) <= 0.001;
+}
+
+export function validateQuestionDataForRole(data: QuestionData, userLevel: string): string | null {
+  const performance = inspectSection(data, 'performance', 10, '业绩评价');
+  if (performance.error) return performance.error;
+  if (performance.count === 0) return '业绩评价至少需要 1 道题目';
+
+  const comprehensive = inspectSection(data, 'comprehensive', 5, '综合评价');
+  if (comprehensive.error) return comprehensive.error;
+
+  if (userLevel === 'manager') {
+    const standard = totalsMatch(performance.total, 70) && totalsMatch(comprehensive.total, 30) && comprehensive.count > 0;
+    const performanceOnly = totalsMatch(performance.total, 100) && totalsMatch(comprehensive.total, 0) && comprehensive.count === 0;
+    if (standard || performanceOnly) return null;
+    return `部门负责人题目分值必须为 70/30 或 100/0，当前为 ${performance.total.toFixed(1)}/${comprehensive.total.toFixed(1)}`;
   }
+
+  if (comprehensive.count === 0) return '综合评价至少需要 1 道题目';
+  if (!totalsMatch(performance.total, 70)) return `业绩评价分值合计 ${performance.total.toFixed(1)}，必须等于 70`;
+  if (!totalsMatch(comprehensive.total, 30)) return `综合评价分值合计 ${comprehensive.total.toFixed(1)}，必须等于 30`;
   return null;
 }
 
-function validateQuestionData(data: QuestionData): string | null {
-  return validateSection(data, 'performance', 70, 10, '业绩评价')
-    || validateSection(data, 'comprehensive', 30, 5, '综合评价');
+export function getQuestionScorePolicy(data: QuestionData, userLevel: string): QuestionScorePolicy {
+  const performance = inspectSection(data, 'performance', 10, '业绩评价');
+  const comprehensive = inspectSection(data, 'comprehensive', 5, '综合评价');
+  const scoreMode: QuestionScoreMode = totalsMatch(performance.total, 70) && totalsMatch(comprehensive.total, 30)
+    ? 'standard_70_30'
+    : totalsMatch(performance.total, 100) && totalsMatch(comprehensive.total, 0)
+      ? 'performance_only_100_0'
+      : 'invalid';
+  return {
+    performance_total: Math.round(performance.total * 10) / 10,
+    comprehensive_total: Math.round(comprehensive.total * 10) / 10,
+    score_mode: scoreMode,
+    valid: validateQuestionDataForRole(data, userLevel) === null,
+  };
 }
 
 const QUESTION_FIELDS = [
@@ -177,7 +222,7 @@ function questionDataEquals(row: SelfQuestionRow, data: QuestionData): boolean {
 export const SelfQuestionModel = {
   findByBatchAndUser(batchId: number, userId: number): Promise<SelfQuestionRow | undefined> {
     return queryOne<SelfQuestionRow>(
-      `SELECT sq.*, u.name as user_name, u.employee_no
+      `SELECT sq.*, u.name as user_name, u.employee_no, u.level as user_level
        FROM self_question sq
        JOIN app_user u ON sq.user_id = u.id
        WHERE sq.batch_id = ? AND sq.user_id = ?`,
@@ -187,7 +232,7 @@ export const SelfQuestionModel = {
 
   findByBatchId(batchId: number): Promise<SelfQuestionRow[]> {
     return queryAll<SelfQuestionRow>(
-      `SELECT sq.*, u.name as user_name, u.employee_no
+      `SELECT sq.*, u.name as user_name, u.employee_no, u.level as user_level
        FROM self_question sq
        JOIN app_user u ON sq.user_id = u.id
        WHERE sq.batch_id = ?
@@ -200,6 +245,7 @@ export const SelfQuestionModel = {
     return rows.map(row => {
       const performance = collectQuestions(row, 'performance');
       const comprehensive = collectQuestions(row, 'comprehensive');
+      const policy = getQuestionScorePolicy(row, row.user_level ?? 'staff');
       return {
         id: row.id,
         batch_id: row.batch_id,
@@ -209,6 +255,9 @@ export const SelfQuestionModel = {
         performance_questions: performance,
         comprehensive_questions: comprehensive,
         questions: [...performance, ...comprehensive],
+        performance_total: policy.performance_total,
+        comprehensive_total: policy.comprehensive_total,
+        score_mode: policy.score_mode,
       };
     });
   },
@@ -225,7 +274,7 @@ export const SelfQuestionModel = {
     await transaction(async tx => {
       for (const q of questions) {
         const d = q.data;
-        const validationError = validateQuestionData(d);
+        const validationError = validateQuestionDataForRole(d, q.user_level);
         if (validationError) {
           errors.push({ row: q.row, employee_no: q.employee_no, user_name: q.user_name, message: validationError, code: 'validation' });
           continue;

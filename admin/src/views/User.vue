@@ -3,7 +3,7 @@
     <section class="admin-hero">
       <div>
         <h1>人员与角色</h1>
-        <p>维护员工、部门负责人、分管领导和主要领导，并配置分管领导负责部门。</p>
+        <p>维护员工、部门负责人、分管领导和主要领导，并配置负责人及分管领导的负责部门。</p>
       </div>
       <div class="hero-actions">
         <el-button @click="downloadImportTemplate">下载导入模板</el-button>
@@ -82,7 +82,7 @@
         </el-table-column>
         <el-table-column label="负责部门" min-width="160">
           <template #default="{ row }">
-            <span v-if="row.level === 'division_leader'">{{ (row.managed_departments || []).join('、') || '-' }}</span>
+            <span v-if="['division_leader', 'manager'].includes(row.level)">{{ displayedManagedDepartments(row).join('、') || '-' }}</span>
             <span v-else>-</span>
           </template>
         </el-table-column>
@@ -131,7 +131,7 @@
             <el-option v-for="item in statusOptions" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="form.level === 'division_leader'" label="负责部门" required>
+        <el-form-item v-if="['division_leader', 'manager'].includes(form.level)" label="负责部门" required>
           <el-select v-model="form.managed_departments" multiple filterable style="width:100%">
             <el-option v-for="d in departments" :key="d" :label="d" :value="d" />
           </el-select>
@@ -231,6 +231,11 @@ function resetForm() {
   editingId.value = null
 }
 
+function displayedManagedDepartments(row: any): string[] {
+  const configured = row.managed_departments || []
+  return row.level === 'manager' && configured.length === 0 && row.department ? [row.department] : configured
+}
+
 function openDialog(row?: any) {
   if (row) {
     editingId.value = row.id
@@ -243,7 +248,7 @@ function openDialog(row?: any) {
       status: row.status || 'active',
       phone: row.phone,
       id_card_tail: row.id_card_tail,
-      managed_departments: [...(row.managed_departments || [])],
+      managed_departments: [...displayedManagedDepartments(row)],
     })
   } else {
     resetForm()
@@ -285,9 +290,13 @@ async function handlePageSizeChange() {
 }
 
 async function handleSave() {
+  if (['division_leader', 'manager'].includes(form.level) && form.managed_departments.length === 0) {
+    ElMessage.warning('请选择至少一个负责部门')
+    return
+  }
   saving.value = true
   try {
-    const payload = { ...form, managed_departments: form.level === 'division_leader' ? form.managed_departments : [] }
+    const payload = { ...form, managed_departments: ['division_leader', 'manager'].includes(form.level) ? form.managed_departments : [] }
     if (editingId.value) await userApi.update(editingId.value, payload)
     else await userApi.create(payload)
     showDialog.value = false

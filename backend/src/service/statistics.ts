@@ -2,6 +2,7 @@ import { queryAll } from '../db/query.js';
 import { AnswerModel, type AnswerRow } from '../model/answer.js';
 import { BatchModel } from '../model/batch.js';
 import { RelationModel, type RelationRow } from '../model/relation.js';
+import type { QuestionScoreMode } from '../model/self_question.js';
 
 type TargetLevel = 'manager' | 'staff';
 
@@ -14,6 +15,8 @@ interface StatUser {
   level: TargetLevel;
   department_sort_order: number;
   department_id: number;
+  performance_total: number;
+  comprehensive_total: number;
 }
 
 export interface StatisticsRow {
@@ -51,6 +54,16 @@ export interface StatisticsResult {
 
 function round1(value: number): number {
   return Math.round(value * 10) / 10;
+}
+
+export function composeManagerFinalScore(
+  performanceScore: number | null,
+  comprehensiveScore: number | null,
+  scoreMode: QuestionScoreMode
+): number | null {
+  if (performanceScore === null) return null;
+  if (scoreMode === 'performance_only_100_0') return round1(performanceScore);
+  return comprehensiveScore === null ? null : round1(performanceScore + comprehensiveScore);
 }
 
 function average(values: Array<number | null | undefined>): number | null {
@@ -126,7 +139,9 @@ function getTargetUsers(batchId: number): Promise<StatUser[]> {
   return queryAll<StatUser>(
     `SELECT u.id, u.name, u.employee_no, u.department, u.position, u.level,
             COALESCE(d.sort_order, 999999) as department_sort_order,
-            COALESCE(d.id, 999999) as department_id
+            COALESCE(d.id, 999999) as department_id,
+            ${Array.from({ length: 10 }, (_, index) => `COALESCE(sq.weight_${index + 1}, 0)`).join(' + ')} as performance_total,
+            ${Array.from({ length: 5 }, (_, index) => `COALESCE(sq.comp_weight_${index + 1}, 0)`).join(' + ')} as comprehensive_total
      FROM app_user u
      JOIN self_question sq ON sq.user_id = u.id AND sq.batch_id = ?
      LEFT JOIN department d ON d.name = u.department
@@ -175,38 +190,43 @@ function buildManagerRow(
   answersMap: Map<number, AnswerRow[]>
 ): StatisticsRow {
   const missing: string[] = [];
+  const scoreMode: QuestionScoreMode = Math.abs(Number(user.performance_total) - 100) <= 0.001
+    && Math.abs(Number(user.comprehensive_total)) <= 0.001
+    ? 'performance_only_100_0'
+    : 'standard_70_30';
+  const performanceOnly = scoreMode === 'performance_only_100_0';
   const selfRel = findSelfRelation(relations, user.id);
   const selfAnswers = selfRel?.status === 'completed' ? answersMap.get(selfRel.id) || [] : [];
   const performanceSelf = selfAnswers.length ? sumBySection(selfAnswers, 'performance') : null;
-  const comprehensiveSelf = selfAnswers.length ? sumBySection(selfAnswers, 'comprehensive') : null;
+  const comprehensiveSelf = !performanceOnly && selfAnswers.length ? sumBySection(selfAnswers, 'comprehensive') : null;
   const performanceLeader = managerPerformance(user.id, relations, answersMap, missing);
   addMissing(missing, '业绩-自评价', performanceSelf);
   const performanceScore = performanceLeader !== null && performanceSelf !== null
     ? round1(performanceLeader * 0.7 + performanceSelf * 0.3)
     : null;
 
-  const mainComp = average(completedRelationScores(
+  const mainComp = performanceOnly ? null : average(completedRelationScores(
     relationsToTarget(relations, user.id, { evalType: 'downward', evaluatorLevel: 'main_leader' }),
     answersMap,
     'comprehensive'
   ));
-  const divisionComp = average(completedRelationScores(
+  const divisionComp = performanceOnly ? null : average(completedRelationScores(
     relationsToTarget(relations, user.id, { evalType: 'downward', evaluatorLevel: 'division_leader' }),
     answersMap,
     'comprehensive'
   ));
-  const managerPeer = average(completedRelationScores(
+  const managerPeer = performanceOnly ? null : average(completedRelationScores(
     relationsToTarget(relations, user.id, { evalType: 'peer', evaluatorLevel: 'manager' }),
     answersMap,
     'total'
   ));
-  const staffReview = average(completedRelationScores(
+  const staffReview = performanceOnly ? null : average(completedRelationScores(
     relationsToTarget(relations, user.id, { evalType: 'peer', evaluatorLevel: 'staff' }),
     answersMap,
     'total'
   ));
   const comprehensiveMissing: string[] = [];
-  const comprehensiveScore = weighted([
+  const comprehensiveScore = performanceOnly ? null : weighted([
     { label: '综合-主要领导评价', value: mainComp, weight: 0.4 },
     { label: '综合-分管领导评价', value: divisionComp, weight: 0.25 },
     { label: '中层互评', value: managerPeer, weight: 0.2 },
@@ -214,9 +234,7 @@ function buildManagerRow(
   ], comprehensiveMissing);
   missing.push(...comprehensiveMissing);
 
-  const finalScore = performanceScore !== null && comprehensiveScore !== null
-    ? round1(performanceScore + comprehensiveScore)
-    : null;
+  const finalScore = composeManagerFinalScore(performanceScore, comprehensiveScore, scoreMode);
 
   return {
     index,

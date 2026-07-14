@@ -109,13 +109,14 @@
       <el-alert
         type="success"
         :closable="false"
-        title="现有评价关系、题目、草稿和正式答案均会保留，本次只新增缺失关系。"
+        title="现有题目、草稿和正式答案均会保留；仅清理因负责人100/0模式失效且从未作答的待评价关系。"
         class="preview-alert"
       />
       <div v-if="preview" class="preview-summary">
         <div><span>现有关系</span><strong>{{ preview.existing_total }}</strong></div>
         <div><span>新增关系</span><strong>{{ preview.new_relations.total }}</strong></div>
         <div><span>新增人员</span><strong>{{ preview.new_participants.length }}</strong></div>
+        <div><span>清理不适用关系</span><strong>{{ preview.inapplicable_pending_relations || 0 }}</strong></div>
         <div><span>保留的旧规则关系</span><strong>{{ preview.obsolete_relations }}</strong></div>
       </div>
       <div v-if="preview" class="preview-breakdown">
@@ -151,7 +152,7 @@
         <el-button
           type="primary"
           :loading="generating"
-          :disabled="!preview || preview.new_relations.total === 0"
+          :disabled="!preview || (preview.new_relations.total === 0 && !preview.inapplicable_pending_relations)"
           @click="confirmGenerate"
         >确认增量生成</el-button>
       </template>
@@ -251,7 +252,7 @@ async function confirmGenerate() {
   try {
     const res: any = await relationApi.generate(Number(props.batchId), preview.value.preview_hash)
     previewVisible.value = false
-    ElMessage.success(`增量生成完成，新增 ${res.data?.total || 0} 条关系，原有 ${res.data?.preserved_existing || 0} 条关系已保留`)
+    ElMessage.success(`生成完成：新增 ${res.data?.total || 0} 条，清理 ${res.data?.removed_inapplicable || 0} 条不适用关系，保留 ${res.data?.preserved_existing || 0} 条`)
     await loadList()
   } catch (err: any) {
     if (err?.status === 409 || /重新预览/.test(String(err?.message || ''))) {
@@ -336,7 +337,7 @@ onMounted(loadList)
 .preview-alert { margin-bottom: 16px; }
 .preview-summary {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
   margin-bottom: 14px;
 }
