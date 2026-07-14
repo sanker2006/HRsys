@@ -180,7 +180,7 @@ export const UserModel = {
     if (filters?.level) { sql += ' AND level = ?'; params.push(filters.level); }
     if (filters?.status) { sql += ' AND status = ?'; params.push(normalizeStatus(filters.status)); }
     if (filters?.keyword) { sql += ' AND (name LIKE ? OR employee_no LIKE ?)'; params.push(`%${filters.keyword}%`, `%${filters.keyword}%`); }
-    sql += ' ORDER BY created_at DESC';
+    sql += ' ORDER BY created_at DESC, id DESC';
     return attachMany(await queryAll<UserRow>(sql, params));
   },
 
@@ -199,7 +199,7 @@ export const UserModel = {
     const total = Number((await queryOne<{ total: number }>(countSql, params))?.total ?? 0);
     const offset = (page - 1) * pageSize;
     const list = await attachMany(await queryAll<UserRow>(
-      `${sql} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+      `${sql} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`,
       [...params, pageSize, offset]
     ));
     return { list, total };

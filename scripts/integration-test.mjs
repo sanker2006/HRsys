@@ -238,6 +238,34 @@ async function main() {
   assert.equal(inactiveStaff.status, 'inactive');
   const inactivePage = await ok('/user/?status=inactive&pageSize=100', { token: adminToken });
   assert.equal(inactivePage.list.some(u => u.employee_no === 'S999'), true);
+
+  const paginationCreatedAt = '2026-01-01 00:00:00';
+  const paginationUsers = Array.from({ length: 25 }, (_, index) => [
+    `分页测试${index + 1}`,
+    `PAG${String(index + 1).padStart(3, '0')}`,
+    `1399000${String(index + 1).padStart(4, '0')}`,
+  ]);
+  for (const [name, employeeNo, phone] of paginationUsers) {
+    await testPool.execute(
+      `INSERT INTO app_user
+        (name, employee_no, department, position, level, phone, id_card_tail, password, status, is_admin, created_at, updated_at)
+       VALUES (?, ?, '研发部', '分页测试', 'staff', ?, '0000', 'not-used', 'active', 0, ?, ?)`,
+      [name, employeeNo, phone, paginationCreatedAt, paginationCreatedAt]
+    );
+  }
+  const paginationPages = await Promise.all([1, 2, 3].map(page =>
+    ok(`/user/?keyword=PAG&page=${page}&pageSize=10`, { token: adminToken })
+  ));
+  const paginatedUsers = paginationPages.flatMap(result => result.list);
+  assert.equal(paginationPages.every(result => result.total === 25), true);
+  assert.equal(paginatedUsers.length, 25);
+  assert.equal(new Set(paginatedUsers.map(user => user.id)).size, 25);
+  assert.deepEqual(
+    paginatedUsers.map(user => user.id),
+    [...paginatedUsers.map(user => user.id)].sort((a, b) => b - a)
+  );
+  await testPool.execute("DELETE FROM app_user WHERE employee_no LIKE 'PAG%'");
+
   await fail('/auth/h5-login', {
     method: 'POST',
     body: { phone: '13800000019', idCardTail: '0019' },
