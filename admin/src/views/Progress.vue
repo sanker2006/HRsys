@@ -49,10 +49,23 @@
     </el-card>
 
     <el-card class="work-card table-card">
+      <div class="progress-filters">
+        <el-select v-model="filterEvaluatorIds" placeholder="姓名" multiple filterable clearable collapse-tags collapse-tags-tooltip>
+          <el-option v-for="option in evaluatorOptions" :key="option.value" :label="option.label" :value="option.value" />
+        </el-select>
+        <el-select v-model="filterDepartments" placeholder="部门" multiple filterable clearable collapse-tags collapse-tags-tooltip>
+          <el-option v-for="department in departmentOptions" :key="department" :label="department" :value="department" />
+        </el-select>
+        <el-select v-model="filterStatuses" placeholder="状态" multiple clearable collapse-tags collapse-tags-tooltip>
+          <el-option label="待评" value="pending" />
+          <el-option label="草稿" value="draft" />
+          <el-option label="已完成" value="completed" />
+        </el-select>
+      </div>
       <el-tabs v-model="activeTab">
         <el-tab-pane name="self" label="自评进度">
           <ProgressTable
-            :rows="selfList"
+            :rows="filteredSelfList"
             mode="self"
             :page="selfPage"
             :page-size="selfPageSize"
@@ -63,7 +76,7 @@
 
         <el-tab-pane name="peer" label="互评进度">
           <ProgressTable
-            :rows="peerList"
+            :rows="filteredPeerList"
             mode="peer"
             :page="peerPage"
             :page-size="peerPageSize"
@@ -74,7 +87,7 @@
 
         <el-tab-pane name="downward" label="向下评估">
           <ProgressTable
-            :rows="downwardList"
+            :rows="filteredDownwardList"
             mode="downward"
             :page="downwardPage"
             :page-size="downwardPageSize"
@@ -88,9 +101,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, h, onMounted, ref } from 'vue'
+import { computed, defineComponent, h, onMounted, ref, watch } from 'vue'
 import { ElEmpty, ElPagination, ElTable, ElTableColumn, ElTag } from 'element-plus'
 import { answerApi, batchApi } from '../api'
+import { buildDepartmentOptions, buildPersonOptions, filterProgressRows } from '../utils/relationFilters'
 
 type TagType = 'primary' | 'success' | 'warning' | 'info' | 'danger'
 
@@ -107,6 +121,9 @@ const peerPageSize = ref(20)
 const downwardPage = ref(1)
 const downwardPageSize = ref(20)
 const activeTab = ref('self')
+const filterEvaluatorIds = ref<number[]>([])
+const filterDepartments = ref<string[]>([])
+const filterStatuses = ref<string[]>([])
 
 const statusText: Record<string, string> = { draft: '草稿', active: '进行中', closed: '已结束' }
 const statusTag: Record<string, TagType> = { completed: 'success', draft: 'warning', pending: 'info' }
@@ -130,6 +147,24 @@ const totalStats = computed(() => ({
 }))
 const totalProgress = computed(() => totalStats.value.total ? Math.round((totalStats.value.completed / totalStats.value.total) * 100) : 0)
 const progressColor = computed(() => totalProgress.value >= 80 ? '#67c23a' : totalProgress.value >= 40 ? '#e6a23c' : '#909399')
+const allProgressRows = computed(() => [...selfList.value, ...peerList.value, ...downwardList.value])
+const evaluatorOptions = computed(() => buildPersonOptions(allProgressRows.value, 'evaluator'))
+const departmentOptions = computed(() => buildDepartmentOptions(allProgressRows.value, 'evaluator'))
+const progressFilters = computed(() => ({
+  evaluatorIds: filterEvaluatorIds.value,
+  evaluatorDepartments: filterDepartments.value,
+  statuses: filterStatuses.value,
+}))
+const filteredSelfList = computed(() => filterProgressRows(selfList.value, progressFilters.value))
+const filteredPeerList = computed(() => filterProgressRows(peerList.value, progressFilters.value))
+const filteredDownwardList = computed(() => filterProgressRows(downwardList.value, progressFilters.value))
+
+watch([filterEvaluatorIds, filterDepartments, filterStatuses], () => {
+  selfPage.value = 1
+  peerPage.value = 1
+  downwardPage.value = 1
+}, { deep: true })
+
 function statusClass(status: string) {
   if (status === 'active') return 'success'
   if (status === 'draft') return 'warning'
@@ -253,8 +288,13 @@ onMounted(async () => {
 .type-name { font-size: 15px; font-weight: 700; color: #1a2332; margin-bottom: 4px; }
 .type-nums { font-size: 12px; color: #666; }
 .table-card { margin-top: 0; }
+.progress-filters { display: grid; grid-template-columns: repeat(3, minmax(180px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.progress-filters .el-select { width: 100%; }
 .eval-table { font-size: 13px; border-radius: 8px; overflow: hidden; }
 .total-val { color: #1a2332; font-size: 13px; }
 .pagination-wrap { margin-top: 14px; display: flex; justify-content: flex-end; align-items: center; gap: 12px; }
 .total-hint { font-size: 13px; color: #888; }
+@media (max-width: 720px) {
+  .progress-filters { grid-template-columns: 1fr; }
+}
 </style>

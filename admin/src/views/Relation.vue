@@ -38,24 +38,34 @@
         <div class="card-titlebar">
           <div class="card-title">
             <strong>关系列表</strong>
-            <span>可按评价类型和完成状态过滤。</span>
+            <span>可按评价双方、部门、类型和状态组合过滤。</span>
           </div>
           <el-button @click="$router.back()">返回批次</el-button>
         </div>
       </template>
 
       <div class="filters">
-        <el-select v-model="filterType" placeholder="评价类型" clearable>
-          <el-option label="全部" value="" />
+        <el-select v-model="filterTypes" placeholder="评价类型" multiple clearable collapse-tags collapse-tags-tooltip>
           <el-option label="自评" value="self" />
           <el-option label="同层互评" value="peer" />
           <el-option label="向下评价" value="downward" />
         </el-select>
-        <el-select v-model="filterStatus" placeholder="状态" clearable>
-          <el-option label="全部" value="" />
+        <el-select v-model="filterStatuses" placeholder="状态" multiple clearable collapse-tags collapse-tags-tooltip>
           <el-option label="待评" value="pending" />
           <el-option label="草稿" value="draft" />
           <el-option label="已完成" value="completed" />
+        </el-select>
+        <el-select v-model="filterEvaluatorIds" placeholder="评价人" multiple filterable clearable collapse-tags collapse-tags-tooltip>
+          <el-option v-for="option in evaluatorOptions" :key="option.value" :label="option.label" :value="option.value" />
+        </el-select>
+        <el-select v-model="filterEvaluatorDepartments" placeholder="评价部门" multiple filterable clearable collapse-tags collapse-tags-tooltip>
+          <el-option v-for="department in evaluatorDepartmentOptions" :key="department" :label="department" :value="department" />
+        </el-select>
+        <el-select v-model="filterTargetIds" placeholder="被评价人" multiple filterable clearable collapse-tags collapse-tags-tooltip>
+          <el-option v-for="option in targetOptions" :key="option.value" :label="option.label" :value="option.value" />
+        </el-select>
+        <el-select v-model="filterTargetDepartments" placeholder="被评价部门" multiple filterable clearable collapse-tags collapse-tags-tooltip>
+          <el-option v-for="department in targetDepartmentOptions" :key="department" :label="department" :value="department" />
         </el-select>
       </div>
 
@@ -161,9 +171,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { batchApi, relationApi } from '../api'
+import { buildDepartmentOptions, buildPersonOptions, filterRelationRows } from '../utils/relationFilters'
 
 const props = defineProps<{ batchId: string }>()
 const loading = ref(false)
@@ -172,13 +183,17 @@ const previewVisible = ref(false)
 const preview = ref<any>(null)
 const batch = ref<any>(null)
 const allList = ref<any[]>([])
-const filterType = ref('')
-const filterStatus = ref('')
+const filterTypes = ref<string[]>([])
+const filterStatuses = ref<string[]>([])
+const filterEvaluatorIds = ref<number[]>([])
+const filterEvaluatorDepartments = ref<string[]>([])
+const filterTargetIds = ref<number[]>([])
+const filterTargetDepartments = ref<string[]>([])
 const currentPage = ref(1)
 const pageSize = ref(20)
 const canGenerate = computed(() => ['draft', 'active'].includes(batch.value?.status))
 
-const typeTag: Record<string, string> = { self: '', peer: 'warning', downward: 'success' }
+const typeTag: Record<string, string> = { self: 'primary', peer: 'warning', downward: 'success' }
 const typeText: Record<string, string> = { self: '自评', peer: '同层互评', downward: '向下评价' }
 const statusTag: Record<string, string> = { pending: 'info', draft: 'warning', completed: 'success' }
 const statusText: Record<string, string> = { pending: '待评', draft: '草稿', completed: '已完成' }
@@ -191,13 +206,18 @@ const roleText: Record<string, string> = {
   admin: '管理员',
 }
 
-const filteredList = computed(() => {
-  return allList.value.filter(r => {
-    if (filterType.value && r.eval_type !== filterType.value) return false
-    if (filterStatus.value && r.status !== filterStatus.value) return false
-    return true
-  })
-})
+const evaluatorOptions = computed(() => buildPersonOptions(allList.value, 'evaluator'))
+const targetOptions = computed(() => buildPersonOptions(allList.value, 'target'))
+const evaluatorDepartmentOptions = computed(() => buildDepartmentOptions(allList.value, 'evaluator'))
+const targetDepartmentOptions = computed(() => buildDepartmentOptions(allList.value, 'target'))
+const filteredList = computed(() => filterRelationRows(allList.value, {
+  evalTypes: filterTypes.value,
+  statuses: filterStatuses.value,
+  evaluatorIds: filterEvaluatorIds.value,
+  evaluatorDepartments: filterEvaluatorDepartments.value,
+  targetIds: filterTargetIds.value,
+  targetDepartments: filterTargetDepartments.value,
+}))
 
 const paginatedList = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value
@@ -208,6 +228,17 @@ const typeCount = computed(() => ({
   peer: allList.value.filter(r => r.eval_type === 'peer').length,
   downward: allList.value.filter(r => r.eval_type === 'downward').length,
 }))
+
+watch([
+  filterTypes,
+  filterStatuses,
+  filterEvaluatorIds,
+  filterEvaluatorDepartments,
+  filterTargetIds,
+  filterTargetDepartments,
+], () => {
+  currentPage.value = 1
+}, { deep: true })
 
 async function loadList() {
   loading.value = true
@@ -332,8 +363,8 @@ onMounted(loadList)
 
 <style scoped>
 .relation-metrics .metric-value { font-size: 28px; }
-.filters { display: flex; gap: 10px; margin-bottom: 14px; }
-.filters .el-select { width: 140px; }
+.filters { display: grid; grid-template-columns: repeat(3, minmax(180px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.filters .el-select { width: 100%; }
 .preview-alert { margin-bottom: 16px; }
 .preview-summary {
   display: grid;
@@ -357,6 +388,7 @@ onMounted(loadList)
 .impact-list span { padding: 7px 10px; border-radius: 6px; background: var(--admin-bg-soft); font-size: 13px; }
 .warning-section h3 { color: var(--el-color-warning-dark-2); }
 @media (max-width: 720px) {
+  .filters { grid-template-columns: 1fr; }
   .preview-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 </style>

@@ -459,9 +459,11 @@ router.get('/admin/progress/:batchId', auth, async (ctx: Context) => {
   }
   const buildList = (rows: RelationRow[]) => rows.map(r => ({
     id: r.id,
+    evaluator_id: r.evaluator_id,
     evaluator_name: r.evaluator_name,
     evaluator_department: r.evaluator_department,
     evaluator_level: r.evaluator_level,
+    target_id: r.target_id,
     target_name: r.target_name,
     target_department: r.target_department,
     target_level: r.target_level,

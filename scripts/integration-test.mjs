@@ -500,6 +500,9 @@ async function main() {
   assert.equal(mainRels.list.filter(r => r.eval_type === 'downward').length, 6);
 
   const adminProgress = await ok(`/answer/admin/progress/${batch.id}`, { token: adminToken });
+  for (const section of [adminProgress.self, adminProgress.peer, adminProgress.downward]) {
+    assert.equal(section.list.every(row => Number.isInteger(row.evaluator_id) && Number.isInteger(row.target_id)), true);
+  }
   assert.equal(adminProgress.self.stats.completed, 6);
   assert(adminProgress.downward.stats.completed >= 6);
 
