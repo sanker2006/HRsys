@@ -92,12 +92,16 @@
                 <span>04</span>
                 <strong>评价关系</strong>
               </button>
-              <button type="button" class="workflow-step primary-step" @click="$router.push(`/progress/${row.id}`)">
+              <button type="button" class="workflow-step" @click="$router.push(`/leader-score/${row.id}`)">
                 <span>05</span>
+                <strong>领导评分</strong>
+              </button>
+              <button type="button" class="workflow-step primary-step" @click="$router.push(`/progress/${row.id}`)">
+                <span>06</span>
                 <strong>进度监控</strong>
               </button>
               <button type="button" class="workflow-step stat-step" @click="$router.push(`/statistics/${row.id}`)">
-                <span>06</span>
+                <span>07</span>
                 <strong>数据统计</strong>
               </button>
             </div>

@@ -1,6 +1,6 @@
 import Router from '@koa/router';
 import ExcelJS from 'exceljs';
-import { AnswerModel, type AnswerRow } from '../model/answer.js';
+import { AnswerModel, LEADER_COMPREHENSIVE_SEQ, LEADER_PERFORMANCE_SEQ, type AnswerRow } from '../model/answer.js';
 import { RelationModel, type RelationRow } from '../model/relation.js';
 import { SelfQuestionModel, type QuestionItem } from '../model/self_question.js';
 import { BatchModel } from '../model/batch.js';
@@ -8,6 +8,8 @@ import { PersonalSummaryModel } from '../model/personal_summary.js';
 import { buildStatistics, type StatisticsRow } from '../service/statistics.js';
 import { success, fail } from '../utils/response.js';
 import { auth } from '../middleware/auth.js';
+import { execute, queryAll, transaction, type DbExecutor } from '../db/query.js';
+import { getGradePolicyForRelation, submitDetailedItems } from '../service/gradedAnswerSubmission.js';
 import type { Context } from 'koa';
 
 const router = new Router({ prefix: '/api/v1/answer' });
@@ -31,16 +33,10 @@ function totalOfAnswers(answers: AnswerRow[]): number | null {
   return total?.score ?? null;
 }
 
-function scoreBand(score: number): 'high' | 'mid' | 'low' {
-  if (score >= 81 && score <= 100) return 'high';
-  if (score >= 71 && score < 81) return 'mid';
-  return 'low';
-}
-
-function isLeaderStaffTotalRelation(relation: RelationRow): boolean {
+function isLeaderTotalRelation(relation: RelationRow): boolean {
   return relation.eval_type === 'downward'
     && (relation.evaluator_level === 'division_leader' || relation.evaluator_level === 'main_leader')
-    && relation.target_level === 'staff';
+    && (relation.target_level === 'staff' || relation.target_level === 'manager');
 }
 
 async function getSelfRelation(batchId: number, userId: number): Promise<RelationRow | undefined> {
@@ -151,7 +147,7 @@ async function questionSetForRelation(relation: RelationRow): Promise<QuestionIt
   if (!sq) return [];
   const exportRow = SelfQuestionModel.toExportFormat([sq])[0];
   if (relation.eval_type === 'peer') return exportRow.comprehensive_questions;
-  if (isLeaderStaffTotalRelation(relation)) return [];
+  if (isLeaderTotalRelation(relation)) return [];
   return exportRow.questions;
 }
 
@@ -176,69 +172,42 @@ async function validateDetailedAnswers(relation: RelationRow, answers: any[], dr
   return null;
 }
 
+function normalizeDetailedAnswers(answers: any[]): Array<{ seq: number; score: number }> {
+  return answers
+    .map(a => ({ seq: Number(a.seq ?? a.question_seq ?? a.answer_seq), score: round1(Number(a.score)) }))
+    .filter(a => Number.isFinite(a.seq) && Number.isFinite(a.score));
+}
+
 async function submitDetailed(relation: RelationRow, answers: any[], draft: boolean): Promise<void> {
   const normalized = answers
     .map(a => ({ seq: Number(a.seq ?? a.question_seq ?? a.answer_seq), score: round1(Number(a.score)) }))
     .filter(a => Number.isFinite(a.seq) && Number.isFinite(a.score));
-  await AnswerModel.submitDetailedWithStatus(relation.id, normalized, draft ? 'draft' : 'completed', draft);
+  await submitDetailedItems([{ relation, answers: normalized, draft }]);
 }
 
 function validateTotalAnswer(relation: RelationRow, score: unknown): { ok: boolean; score?: number; message?: string } {
   const numericScore = Number(score);
-  if (!isLeaderStaffTotalRelation(relation)) return { ok: false, message: '该评价关系不支持总分评价，请按题目逐项评分' };
+  if (!isLeaderTotalRelation(relation)) return { ok: false, message: '该评价关系不支持总分评价，请按题目逐项评分' };
   if (!Number.isFinite(numericScore)) return { ok: false, message: '分数格式不正确' };
   if (!isOneDecimal(numericScore)) return { ok: false, message: '评分最多支持 1 位小数' };
   if (numericScore < 0 || numericScore > 30) return { ok: false, message: '分数必须在 0~30 之间' };
   return { ok: true, score: round1(numericScore) };
 }
 
+function validateLeaderTotals(relation: RelationRow, performance: unknown, comprehensive: unknown) {
+  if (!isLeaderTotalRelation(relation)) return { ok: false, message: '该评价关系不支持领导总分评价' };
+  const performanceScore = Number(performance);
+  const comprehensiveScore = Number(comprehensive);
+  if (!isOneDecimal(performanceScore) || !isOneDecimal(comprehensiveScore)) {
+    return { ok: false, message: '业绩和综合评分最多支持 1 位小数' };
+  }
+  if (performanceScore < 0 || performanceScore > 70) return { ok: false, message: '业绩评分必须在 0~70 之间' };
+  if (comprehensiveScore < 0 || comprehensiveScore > 30) return { ok: false, message: '综合评分必须在 0~30 之间' };
+  return { ok: true, performance: round1(performanceScore), comprehensive: round1(comprehensiveScore) };
+}
+
 async function submitTotal(relation: RelationRow, score: number, draft: boolean): Promise<void> {
   await AnswerModel.submitTotalWithStatus(relation.id, score, draft ? 'draft' : 'completed', draft);
-}
-
-async function buildManagerQuota(batchId: number, managerId: number, incoming: Map<number, number> = new Map()) {
-  const rows = (await RelationModel.findByBatchId(batchId, { evaluator_id: managerId, eval_type: 'downward' }))
-    .filter(r => r.target_level === 'staff');
-  const total = rows.length;
-  const highMax = Math.round(total * 0.4);
-  const midMax = Math.round(total * 0.3);
-  const lowMin = total - highMax - midMax;
-  const bandCounts = { high: 0, mid: 0, low: 0 };
-  for (const row of rows) {
-    let score: number | null = null;
-    if (incoming.has(row.id)) {
-      score = incoming.get(row.id)!;
-    } else if (row.status === 'completed') {
-      score = totalOfAnswers(await AnswerModel.findByRelationId(row.id));
-    }
-    if (score === null || score === undefined) continue;
-    bandCounts[scoreBand(score)]++;
-  }
-  return {
-    total,
-    high: bandCounts.high,
-    mid: bandCounts.mid,
-    low: bandCounts.low,
-    highMax,
-    midMax,
-    lowMin,
-    highRemain: Math.max(0, highMax - bandCounts.high),
-    midRemain: Math.max(0, midMax - bandCounts.mid),
-    lowNeed: Math.max(0, lowMin - bandCounts.low),
-  };
-}
-
-async function validateManagerQuota(batchId: number, managerId: number, incoming: Map<number, number>) {
-  const detail = await buildManagerQuota(batchId, managerId, incoming);
-  const { high, mid, highMax, midMax } = detail;
-  if (high > highMax || mid > midMax) {
-    return {
-      ok: false,
-      message: `分档名额已超出：81-100 分最多 ${highMax} 人，71-80 分最多 ${midMax} 人；当前提交后高分 ${high} 人、中分 ${mid} 人`,
-      detail,
-    };
-  }
-  return { ok: true, detail };
 }
 
 async function canSubmitForBatch(batchId: number): Promise<{ ok: boolean; message?: string }> {
@@ -275,8 +244,17 @@ router.get('/downward/:batchId', async (ctx: Context) => {
   if (!batch) return fail(ctx, '批次不存在', -1, 404);
   const relations = await RelationModel.findByBatchId(batchId, { evaluator_id: userId, eval_type: 'downward' });
   const staffRelations = relations.filter(r => r.evaluator_level === 'manager' && r.target_level === 'staff');
-  const quota = staffRelations.length > 0 ? await buildManagerQuota(batchId, userId) : null;
-  success(ctx, { batch, quota, list: await Promise.all(relations.map(buildRelationSummary)) });
+  const quotaByDepartment: Record<string, unknown> = {};
+  for (const relation of staffRelations) {
+    const department = relation.target_department || '未分部门';
+    if (!quotaByDepartment[department]) quotaByDepartment[department] = await getGradePolicyForRelation(relation);
+  }
+  success(ctx, {
+    batch,
+    quota: Object.keys(quotaByDepartment).length === 1 ? Object.values(quotaByDepartment)[0] : null,
+    quota_by_department: quotaByDepartment,
+    list: await Promise.all(relations.map(buildRelationSummary)),
+  });
 });
 
 router.get('/relation/:relationId', async (ctx: Context) => {
@@ -288,7 +266,10 @@ router.get('/relation/:relationId', async (ctx: Context) => {
   const answers = await AnswerModel.findByRelationId(relationId);
   const context = await buildQuestionContext(relation);
   const gate = await canEvaluate(relation);
-  const mode = isLeaderStaffTotalRelation(relation) ? 'leader_staff_total' : 'detail';
+  const mode = isLeaderTotalRelation(relation) ? 'leader_totals' : 'detail';
+  const performanceTotal = answers.find(a => a.question_seq === LEADER_PERFORMANCE_SEQ)?.score ?? null;
+  const comprehensiveTotal = answers.find(a => a.question_seq === LEADER_COMPREHENSIVE_SEQ)?.score
+    ?? (isLeaderTotalRelation(relation) && performanceTotal === null ? totalOfAnswers(answers) : null);
   const personalSummary = relation.eval_type === 'self'
     ? null
     : await PersonalSummaryModel.findMetadata(relation.batch_id, relation.target_id);
@@ -303,6 +284,9 @@ router.get('/relation/:relationId', async (ctx: Context) => {
     can_submit: gate.ok,
     blocked_reason: gate.reason ?? null,
     mode,
+    leader_performance_score: performanceTotal,
+    leader_comprehensive_score: comprehensiveTotal,
+    grade_policy: await getGradePolicyForRelation(relation),
     personal_summary: personalSummary ? {
       original_name: personalSummary.original_name,
       file_size: personalSummary.file_size,
@@ -319,6 +303,7 @@ router.post('/self', async (ctx: Context) => {
   if (!relation) return fail(ctx, '评价关系不存在', -1, 404);
   if (relation.evaluator_id !== userId) return fail(ctx, '无权操作', -1, 403);
   if (relation.eval_type !== 'self') return fail(ctx, '该接口仅用于自评', -1, 400);
+  if (relation.status === 'completed') return fail(ctx, '该评价已正式提交，请先撤销评分后再修改', -1, 409);
   if (!Array.isArray(answers)) return fail(ctx, 'answers 必须是数组');
   const batchGate = await canSubmitForBatch(relation.batch_id);
   if (!batchGate.ok) return fail(ctx, batchGate.message);
@@ -337,17 +322,14 @@ router.post('/detail', async (ctx: Context) => {
   if (!relation) return fail(ctx, '评价关系不存在', -1, 404);
   if (relation.evaluator_id !== userId) return fail(ctx, '无权操作', -1, 403);
   if (relation.eval_type === 'self') return fail(ctx, '自评请使用 /answer/self', -1, 400);
+  if (relation.status === 'completed') return fail(ctx, '该评价已正式提交，请先撤销评分后再修改', -1, 409);
+  if (isLeaderTotalRelation(relation)) return fail(ctx, '领导评价请使用业绩和综合总分接口', -1, 400);
   const batchGate = await canSubmitForBatch(relation.batch_id);
   if (!batchGate.ok) return fail(ctx, batchGate.message);
   const gate = await canEvaluate(relation);
   if (!gate.ok) return fail(ctx, gate.reason);
   const err = await validateDetailedAnswers(relation, answers, !!draft);
   if (err) return fail(ctx, err);
-  if (!draft && relation.evaluator_level === 'manager' && relation.target_level === 'staff') {
-    const total = answers.reduce((sum: number, a: any) => sum + Number(a.score || 0), 0);
-    const quota = await validateManagerQuota(relation.batch_id, relation.evaluator_id, new Map([[relation.id, round1(total)]]));
-    if (!quota.ok) return fail(ctx, quota.message);
-  }
   await submitDetailed(relation, answers, !!draft);
   success(ctx, null, draft ? '草稿已保存' : '提交成功');
 });
@@ -360,6 +342,7 @@ router.post('/total', async (ctx: Context) => {
   const relation = await RelationModel.findById(relation_id);
   if (!relation) return fail(ctx, '评价关系不存在', -1, 404);
   if (relation.evaluator_id !== userId) return fail(ctx, '无权操作', -1, 403);
+  if (relation.status === 'completed') return fail(ctx, '该评价已正式提交，不能直接覆盖', -1, 409);
   const batchGate = await canSubmitForBatch(relation.batch_id);
   if (!batchGate.ok) return fail(ctx, batchGate.message);
   const gate = await canEvaluate(relation);
@@ -370,31 +353,57 @@ router.post('/total', async (ctx: Context) => {
   success(ctx, null, draft ? '草稿已保存' : '提交成功');
 });
 
+router.post('/leader-total', async (ctx: Context) => {
+  const userId = getUserId(ctx);
+  const { relation_id, performance_score, comprehensive_score, draft = false } = ctx.request.body as any;
+  const relation = await RelationModel.findById(Number(relation_id));
+  if (!relation) return fail(ctx, '评价关系不存在', -1, 404);
+  if (relation.evaluator_id !== userId) return fail(ctx, '无权操作', -1, 403);
+  if (relation.status === 'completed') return fail(ctx, '该评价已正式提交，请通过管理端Excel覆盖修正', -1, 409);
+  const batchGate = await canSubmitForBatch(relation.batch_id);
+  if (!batchGate.ok) return fail(ctx, batchGate.message);
+  const gate = await canEvaluate(relation);
+  if (!gate.ok) return fail(ctx, gate.reason);
+  const validation = validateLeaderTotals(relation, performance_score, comprehensive_score);
+  if (!validation.ok) return fail(ctx, validation.message);
+  await AnswerModel.submitLeaderTotalsWithStatus(
+    relation.id,
+    validation.performance!,
+    validation.comprehensive!,
+    draft ? 'draft' : 'completed'
+  );
+  success(ctx, null, draft ? '草稿已保存' : '提交成功');
+});
+
 async function handleAnswerItems(userId: number, items: any[], defaultDraft: boolean) {
   const detailed: Array<{ relation: RelationRow; answers: any[]; draft: boolean }> = [];
   const totals: Array<{ relation: RelationRow; score: number; draft: boolean }> = [];
-  const quotaGroups = new Map<string, { batchId: number; managerId: number; incoming: Map<number, number> }>();
+  const leaderTotals: Array<{ relation: RelationRow; performance: number; comprehensive: number; draft: boolean }> = [];
 
   for (const item of items) {
     const relation = await RelationModel.findById(Number(item.relation_id));
     if (!relation) return { error: `评价关系 ${item.relation_id} 不存在` };
     if (relation.evaluator_id !== userId) return { error: '无权操作', code: 403 };
+    if (relation.status === 'completed') return { error: `${relation.target_name || relation.target_id}：已正式提交，请先撤销评分`, code: 409 };
     const batchGate = await canSubmitForBatch(relation.batch_id);
     if (!batchGate.ok) return { error: batchGate.message };
     const gate = await canEvaluate(relation);
     if (!gate.ok) return { error: `${relation.target_name || relation.target_id}：${gate.reason}` };
     const draft = item.draft === undefined ? defaultDraft : !!item.draft;
 
-    if (Array.isArray(item.answers)) {
+    if (item.performance_score !== undefined || item.comprehensive_score !== undefined) {
+      const validation = validateLeaderTotals(relation, item.performance_score, item.comprehensive_score);
+      if (!validation.ok) return { error: `${relation.target_name || relation.target_id}：${validation.message}` };
+      leaderTotals.push({
+        relation,
+        performance: validation.performance!,
+        comprehensive: validation.comprehensive!,
+        draft,
+      });
+    } else if (Array.isArray(item.answers)) {
       const err = await validateDetailedAnswers(relation, item.answers, draft);
       if (err) return { error: `${relation.target_name || relation.target_id}：${err}` };
       detailed.push({ relation, answers: item.answers, draft });
-      if (!draft && relation.evaluator_level === 'manager' && relation.target_level === 'staff') {
-        const total = round1(item.answers.reduce((sum: number, a: any) => sum + Number(a.score || 0), 0));
-        const key = `${relation.batch_id}:${relation.evaluator_id}`;
-        if (!quotaGroups.has(key)) quotaGroups.set(key, { batchId: relation.batch_id, managerId: relation.evaluator_id, incoming: new Map() });
-        quotaGroups.get(key)!.incoming.set(relation.id, total);
-      }
     } else if (item.score !== undefined) {
       const total = validateTotalAnswer(relation, item.score);
       if (!total.ok) return { error: `${relation.target_name || relation.target_id}：${total.message}` };
@@ -404,13 +413,23 @@ async function handleAnswerItems(userId: number, items: any[], defaultDraft: boo
     }
   }
 
-  for (const group of quotaGroups.values()) {
-    const quota = await validateManagerQuota(group.batchId, group.managerId, group.incoming);
-    if (!quota.ok) return { error: quota.message };
+  if (detailed.length > 0) {
+    await submitDetailedItems(detailed.map(item => ({
+      relation: item.relation,
+      answers: normalizeDetailedAnswers(item.answers),
+      draft: item.draft,
+    })));
   }
-  for (const item of detailed) await submitDetailed(item.relation, item.answers, item.draft);
   for (const item of totals) await submitTotal(item.relation, item.score, item.draft);
-  return { saved: detailed.length + totals.length };
+  for (const item of leaderTotals) {
+    await AnswerModel.submitLeaderTotalsWithStatus(
+      item.relation.id,
+      item.performance,
+      item.comprehensive,
+      item.draft ? 'draft' : 'completed'
+    );
+  }
+  return { saved: detailed.length + totals.length + leaderTotals.length };
 }
 
 router.post('/batch', async (ctx: Context) => {
@@ -420,6 +439,86 @@ router.post('/batch', async (ctx: Context) => {
   const result = await handleAnswerItems(userId, items, !!draft);
   if ('error' in result) return fail(ctx, result.error, -1, result.code || 200);
   success(ctx, { saved: result.saved }, draft ? '草稿已保存' : '提交成功');
+});
+
+async function completedLeaderDependencies(
+  relation: RelationRow,
+  db: Pick<DbExecutor, 'queryAll'> = { queryAll }
+) {
+  if (relation.eval_type === 'peer' && relation.evaluator_level === 'staff' && relation.target_level === 'manager') {
+    return [];
+  }
+  if (relation.eval_type === 'downward' && relation.evaluator_level === 'manager' && relation.target_level === 'staff') {
+    return db.queryAll<{ id: number; evaluator_name: string; target_name: string }>(
+      `SELECT DISTINCT lr.id, leader.name as evaluator_name, target.name as target_name
+       FROM relation lr
+       JOIN app_user leader ON leader.id = lr.evaluator_id
+       JOIN app_user target ON target.id = lr.target_id
+       WHERE lr.batch_id = ? AND lr.eval_type = 'downward' AND lr.status = 'completed'
+         AND leader.level IN ('main_leader', 'division_leader')
+         AND (
+           lr.target_id = ?
+           OR lr.target_id IN (
+             SELECT mr.target_id FROM relation mr
+             JOIN app_user mt ON mt.id = mr.target_id
+             WHERE mr.batch_id = ? AND mr.evaluator_id = ?
+               AND mr.eval_type = 'downward' AND mt.level = 'staff'
+           )
+         )`,
+      [relation.batch_id, relation.evaluator_id, relation.batch_id, relation.evaluator_id]
+    );
+  }
+  return db.queryAll<{ id: number; evaluator_name: string; target_name: string }>(
+    `SELECT lr.id, leader.name as evaluator_name, target.name as target_name
+     FROM relation lr
+     JOIN app_user leader ON leader.id = lr.evaluator_id
+     JOIN app_user target ON target.id = lr.target_id
+     WHERE lr.batch_id = ? AND lr.target_id = ? AND lr.eval_type = 'downward'
+       AND lr.status = 'completed' AND leader.level IN ('main_leader', 'division_leader')`,
+    [relation.batch_id, relation.target_id]
+  );
+}
+
+router.post('/relation/:relationId/revoke', async (ctx: Context) => {
+  const relationId = Number(ctx.params.relationId);
+  const userId = getUserId(ctx);
+  const relation = await RelationModel.findById(relationId);
+  if (!relation) return fail(ctx, '评价关系不存在', -1, 404);
+  if (relation.evaluator_id !== userId) return fail(ctx, '只能撤销本人提交的评价', -1, 403);
+  if (isLeaderTotalRelation(relation)) return fail(ctx, '领导评分请通过管理端Excel覆盖修正', -1, 409);
+  if (relation.status !== 'completed') return fail(ctx, '只有已完成的评价可以撤销', -1, 409);
+  const batchGate = await canSubmitForBatch(relation.batch_id);
+  if (!batchGate.ok) return fail(ctx, batchGate.message, -1, 409);
+
+  const previousAnswers = await AnswerModel.findByRelationId(relationId);
+  await transaction(async tx => {
+    const locked = await tx.queryOne<{ status: string }>('SELECT status FROM relation WHERE id = ? FOR UPDATE', [relationId]);
+    if (!locked || locked.status !== 'completed') throw Object.assign(new Error('评价状态已变化，请刷新后重试'), { status: 409 });
+    const dependencies = await completedLeaderDependencies(relation, tx);
+    if (dependencies.length > 0) {
+      const names = dependencies.slice(0, 3).map(item => `${item.evaluator_name}对${item.target_name}的评分`).join('、');
+      throw Object.assign(new Error(`该评分已被后续领导正式评分使用，不能撤销：${names}`), { status: 409 });
+    }
+    await tx.execute('UPDATE answer SET is_draft = 1, updated_at = datetime(\'now\') WHERE relation_id = ?', [relationId]);
+    await tx.execute("UPDATE relation SET status = 'draft', updated_at = datetime('now') WHERE id = ?", [relationId]);
+    await tx.execute(
+      'INSERT INTO log (user_id, action, ip, detail) VALUES (?, ?, ?, ?)',
+      [userId, 'answer.revoke', ctx.ip || null, JSON.stringify({
+        batch_id: relation.batch_id,
+        relation_id: relation.id,
+        eval_type: relation.eval_type,
+        evaluator_id: relation.evaluator_id,
+        target_id: relation.target_id,
+        original_total: totalOfAnswers(previousAnswers),
+        original_answers: previousAnswers.map(answer => ({
+          question_seq: answer.question_seq,
+          score: answer.score,
+          is_total: answer.is_total,
+        })),
+      })]
+    );
+  });
+  success(ctx, null, '评分已撤销并退回草稿');
 });
 
 router.get('/progress/:batchId', async (ctx: Context) => {
@@ -495,7 +594,11 @@ function statisticsExportRows(rows: StatisticsRow[]) {
     员工工号: row.employee_no,
     员工姓名: row.name,
     角色: row.role_label,
-    '业绩-领导评价': formatStatScore(row.performance_leader_score),
+    '业绩-员工自评': formatStatScore(row.performance_self_score),
+    '业绩-部门负责人': formatStatScore(row.performance_manager_score),
+    '业绩-分管领导': formatStatScore(row.performance_division_leader_score),
+    '业绩-主要领导': formatStatScore(row.performance_main_leader_score),
+    '业绩-现行领导评价': formatStatScore(row.performance_leader_score),
     '业绩-自评价': formatStatScore(row.performance_self_score),
     '业绩-计算分': formatStatScore(row.performance_score),
     '综合-主要领导': formatStatScore(row.comprehensive_main_leader_score),
@@ -534,7 +637,8 @@ router.get('/admin/statistics/:batchId/export', auth, async (ctx: Context) => {
   const rows = statisticsExportRows(result.rows);
   const headers = rows.length > 0 ? Object.keys(rows[0]) : [
     '序号', '部门', '员工工号', '员工姓名', '角色',
-    '业绩-领导评价', '业绩-自评价', '业绩-计算分',
+    '业绩-员工自评', '业绩-部门负责人', '业绩-分管领导', '业绩-主要领导',
+    '业绩-现行领导评价', '业绩-自评价', '业绩-计算分',
     '综合-主要领导', '综合-分管领导', '综合-部门负责人评价',
     '中层互评', '员工评议', '员工互评', '综合-自评价', '综合-计算分',
     '最终总分', '数据状态', '缺失项',
@@ -542,7 +646,7 @@ router.get('/admin/statistics/:batchId/export', auth, async (ctx: Context) => {
   worksheet.columns = headers.map((header, index) => ({
     header,
     key: header,
-    width: [8, 18, 14, 14, 12, 14, 12, 12, 14, 14, 18, 12, 12, 12, 12, 12, 12, 12, 36][index] || 12,
+    width: [8, 18, 14, 14, 12, 14, 16, 14, 14, 18, 12, 12, 14, 14, 18, 12, 12, 12, 12, 12, 12, 12, 36][index] || 12,
   }));
   worksheet.addRows(rows);
   worksheet.getRow(1).font = { bold: true };

@@ -74,7 +74,7 @@ async function ensureRelationUniqueIndex(): Promise<void> {
   );
 }
 
-export async function initDb(): Promise<void> {
+export async function initDb(options: { ensureSchema?: boolean } = {}): Promise<void> {
   pool = mysql.createPool({
     uri: DATABASE_URL,
     waitForConnections: true,
@@ -88,15 +88,17 @@ export async function initDb(): Promise<void> {
   });
 
   await pool.query('SELECT 1');
-  for (const stmt of splitSql(readSchema())) {
-    try {
-      await pool.query(stmt);
-    } catch (err: any) {
-      if (err?.code !== 'ER_DUP_KEYNAME') throw err;
+  if (options.ensureSchema !== false) {
+    for (const stmt of splitSql(readSchema())) {
+      try {
+        await pool.query(stmt);
+      } catch (err: any) {
+        if (err?.code !== 'ER_DUP_KEYNAME') throw err;
+      }
     }
+    await ensureRelationUniqueIndex();
+    await ensureAdmin();
   }
-  await ensureRelationUniqueIndex();
-  await ensureAdmin();
 }
 
 export function getDriver(): DbDriver {

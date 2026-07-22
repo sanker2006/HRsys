@@ -12,10 +12,12 @@ export interface RelationRow {
   created_at: string;
   updated_at: string;
   evaluator_name?: string;
+  evaluator_employee_no?: string;
   evaluator_department?: string;
   evaluator_position?: string;
   evaluator_level?: string;
   target_name?: string;
+  target_employee_no?: string;
   target_department?: string;
   target_position?: string;
   target_level?: string;
@@ -24,9 +26,9 @@ export interface RelationRow {
 const REL_SELECT = `
   r.id, r.batch_id, r.evaluator_id, r.target_id, r.role_type, r.eval_type,
   r.status, r.is_anonymous, r.created_at, r.updated_at,
-  e.name as evaluator_name, e.department as evaluator_department,
+  e.name as evaluator_name, e.employee_no as evaluator_employee_no, e.department as evaluator_department,
   e.position as evaluator_position, e.level as evaluator_level,
-  t.name as target_name, t.department as target_department,
+  t.name as target_name, t.employee_no as target_employee_no, t.department as target_department,
   t.position as target_position, t.level as target_level
 `;
 

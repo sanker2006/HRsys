@@ -15,6 +15,7 @@
     </section>
 
     <PersonalSummaryDownload :relation-id="props.relationId" :summary="personalSummary" />
+    <GradePolicyPanel :policy="gradePolicy" />
 
     <section v-if="questions.length" class="question-group">
       <div class="group-title">综合评价</div>
@@ -40,7 +41,7 @@
         <van-button class="btn ghost" :loading="nexting" @click="goNext">下一个人</van-button>
       </template>
       <template v-else>
-        <van-button class="btn secondary" @click="router.back()">返回目录</van-button>
+        <van-button class="btn danger" :loading="revoking" @click="revokeScore">撤销评分</van-button>
         <van-button class="btn primary" type="primary" :loading="nexting" @click="goNext">下一个人</van-button>
       </template>
     </div>
@@ -53,6 +54,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { h5Api } from '../api'
 import PersonalSummaryDownload from '../components/PersonalSummaryDownload.vue'
+import GradePolicyPanel from '../components/GradePolicyPanel.vue'
 
 const props = defineProps<{ batchId: string; relationId: string }>()
 const router = useRouter()
@@ -60,12 +62,14 @@ const router = useRouter()
 const loading = ref(false)
 const relation = ref<any>(null)
 const personalSummary = ref<any>(null)
+const gradePolicy = ref<any>(null)
 const list = ref<any[]>([])
 const questions = ref<any[]>([])
 const answers = reactive<Record<number, number>>({})
 const drafting = ref(false)
 const submitting = ref(false)
 const nexting = ref(false)
+const revoking = ref(false)
 const savedSnapshot = ref('')
 
 const targetName = computed(() => relation.value?.target_name || '同级互评')
@@ -108,6 +112,7 @@ async function loadDetail() {
     const data = res.data || {}
     relation.value = data.relation
     personalSummary.value = data.personal_summary || null
+    gradePolicy.value = data.grade_policy || null
     questions.value = data.comprehensive_questions || []
     for (const key of Object.keys(answers)) delete answers[Number(key)]
     for (const q of questions.value) answers[q.answer_seq] = 0
@@ -118,6 +123,18 @@ async function loadDetail() {
   } finally {
     loading.value = false
   }
+}
+
+async function revokeScore() {
+  try {
+    await showConfirmDialog({ title: '撤销评分', message: '撤销后将退回草稿，可修改后重新提交。', confirmButtonText: '确认撤销', showCancelButton: true })
+  } catch { return }
+  revoking.value = true
+  try {
+    await h5Api.revoke(Number(props.relationId))
+    showToast('已撤销，评分已退回草稿')
+    await Promise.all([loadList(), loadDetail()])
+  } finally { revoking.value = false }
 }
 
 async function submit(draft: boolean) {
@@ -270,4 +287,5 @@ watch(() => props.relationId, loadPage)
 .secondary { color: var(--hr-accent-strong) !important; border: 1px solid #8eb9d4 !important; background: #dbeafe !important; }
 .ghost { color: var(--hr-text) !important; border: 1px solid #b8c9da !important; background: var(--hr-surface-strong) !important; }
 .primary { color: #fff !important; background: #036486 !important; border: 1px solid #036486 !important; box-shadow: 0 10px 22px rgba(3,100,134,.30); }
+.danger { color: #9f1239 !important; border: 1px solid #d59aaa !important; background: #fff1f2 !important; }
 </style>

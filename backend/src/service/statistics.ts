@@ -26,6 +26,9 @@ export interface StatisticsRow {
   name: string;
   role: TargetLevel;
   role_label: string;
+  performance_main_leader_score: number | null;
+  performance_division_leader_score: number | null;
+  performance_manager_score: number | null;
   performance_leader_score: number | null;
   performance_self_score: number | null;
   performance_score: number | null;
@@ -75,9 +78,14 @@ function average(values: Array<number | null | undefined>): number | null {
 }
 
 function sumBySection(answers: AnswerRow[], section: 'performance' | 'comprehensive'): number | null {
+  const sectionSeq = section === 'performance' ? -1 : -2;
+  const explicit = answers.find(answer => answer.question_seq === sectionSeq && answer.is_total === 0);
+  if (explicit?.score !== null && explicit?.score !== undefined) return round1(Number(explicit.score));
   const scores = answers
     .filter(answer => answer.is_total === 0 && answer.question_seq !== null)
-    .filter(answer => section === 'performance' ? Number(answer.question_seq) < 100 : Number(answer.question_seq) > 100)
+    .filter(answer => section === 'performance'
+      ? Number(answer.question_seq) > 0 && Number(answer.question_seq) <= 100
+      : Number(answer.question_seq) > 100)
     .map(answer => Number(answer.score));
   if (scores.length === 0) return null;
   return round1(scores.reduce((sum, score) => sum + score, 0));
@@ -96,7 +104,17 @@ function completedRelationScore(
   if (!relation || relation.status !== 'completed') return null;
   const answers = answersMap.get(relation.id) || [];
   if (mode === 'total') return totalScore(answers);
-  return sumBySection(answers, mode);
+  const section = sumBySection(answers, mode);
+  if (
+    section === null
+    && mode === 'comprehensive'
+    && relation.eval_type === 'downward'
+    && ['main_leader', 'division_leader'].includes(relation.evaluator_level || '')
+  ) {
+    const legacyTotal = totalScore(answers);
+    return legacyTotal !== null && legacyTotal <= 30 ? legacyTotal : null;
+  }
+  return section;
 }
 
 function completedRelationScores(
@@ -200,6 +218,12 @@ function buildManagerRow(
   const performanceSelf = selfAnswers.length ? sumBySection(selfAnswers, 'performance') : null;
   const comprehensiveSelf = !performanceOnly && selfAnswers.length ? sumBySection(selfAnswers, 'comprehensive') : null;
   const performanceLeader = managerPerformance(user.id, relations, answersMap, missing);
+  const performanceMainLeader = average(completedRelationScores(
+    relationsToTarget(relations, user.id, { evalType: 'downward', evaluatorLevel: 'main_leader' }), answersMap, 'performance'
+  ));
+  const performanceDivisionLeader = average(completedRelationScores(
+    relationsToTarget(relations, user.id, { evalType: 'downward', evaluatorLevel: 'division_leader' }), answersMap, 'performance'
+  ));
   addMissing(missing, '业绩-自评价', performanceSelf);
   const performanceScore = performanceLeader !== null && performanceSelf !== null
     ? round1(performanceLeader * 0.7 + performanceSelf * 0.3)
@@ -243,6 +267,9 @@ function buildManagerRow(
     name: user.name,
     role: user.level,
     role_label: roleLabel(user.level),
+    performance_main_leader_score: performanceMainLeader,
+    performance_division_leader_score: performanceDivisionLeader,
+    performance_manager_score: null,
     performance_leader_score: performanceLeader,
     performance_self_score: performanceSelf,
     performance_score: performanceScore,
@@ -275,6 +302,12 @@ function buildStaffRow(
 
   const managerRel = firstRelationToTarget(relations, user.id, { evalType: 'downward', evaluatorLevel: 'manager' });
   const performanceLeader = completedRelationScore(managerRel, answersMap, 'performance');
+  const performanceMainLeader = average(completedRelationScores(
+    relationsToTarget(relations, user.id, { evalType: 'downward', evaluatorLevel: 'main_leader' }), answersMap, 'performance'
+  ));
+  const performanceDivisionLeader = average(completedRelationScores(
+    relationsToTarget(relations, user.id, { evalType: 'downward', evaluatorLevel: 'division_leader' }), answersMap, 'performance'
+  ));
   addMissing(missing, '业绩-部门负责人评价', performanceLeader);
   const performanceScore = performanceLeader !== null && performanceSelf !== null
     ? round1(performanceLeader * 0.7 + performanceSelf * 0.3)
@@ -283,12 +316,12 @@ function buildStaffRow(
   const mainComp = average(completedRelationScores(
     relationsToTarget(relations, user.id, { evalType: 'downward', evaluatorLevel: 'main_leader' }),
     answersMap,
-    'total'
+    'comprehensive'
   ));
   const divisionComp = average(completedRelationScores(
     relationsToTarget(relations, user.id, { evalType: 'downward', evaluatorLevel: 'division_leader' }),
     answersMap,
-    'total'
+    'comprehensive'
   ));
   const managerComp = completedRelationScore(managerRel, answersMap, 'comprehensive');
   const staffPeer = average(completedRelationScores(
@@ -313,6 +346,9 @@ function buildStaffRow(
     name: user.name,
     role: user.level,
     role_label: roleLabel(user.level),
+    performance_main_leader_score: performanceMainLeader,
+    performance_division_leader_score: performanceDivisionLeader,
+    performance_manager_score: performanceLeader,
     performance_leader_score: performanceLeader,
     performance_self_score: performanceSelf,
     performance_score: performanceScore,

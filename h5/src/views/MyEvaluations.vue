@@ -18,7 +18,7 @@
         </div>
 
         <div class="eval-list">
-          <button v-for="r in h.relations" :key="r.id" class="eval-row" type="button" :aria-label="`查看${r.target_name}的评价`" @click="r.status !== 'completed' && router.push(evalPath(r))">
+          <button v-for="r in h.relations" :key="r.id" class="eval-row" type="button" :aria-label="`查看${r.target_name}的评价`" @click="router.push(evalPath(r))">
             <div class="avatar" :class="statusClass(r.status)">{{ r.target_name.charAt(0) }}</div>
             <div class="eval-info">
               <strong>{{ r.target_name }}</strong>
@@ -26,8 +26,8 @@
             </div>
             <div class="eval-side">
               <span class="state-pill" :class="statusClass(r.status)">{{ statusText(r.status) }}</span>
-              <van-button v-if="r.status !== 'completed'" size="small" :type="r.status === 'draft' ? 'default' : 'primary'" :plain="r.status === 'draft'">
-                {{ r.status === 'draft' ? '继续' : '去评价' }}
+              <van-button size="small" :type="r.status === 'completed' ? 'default' : 'primary'" :plain="r.status !== 'pending'">
+                {{ r.status === 'completed' ? '查看' : r.status === 'draft' ? '继续' : '去评价' }}
               </van-button>
             </div>
           </button>

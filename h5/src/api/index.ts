@@ -37,6 +37,12 @@ export const h5Api = {
   submitTotal(data: { relation_id: number; score: number; draft?: boolean }) {
     return api.post('/answer/total', data)
   },
+  submitLeaderTotals(data: { relation_id: number; performance_score: number; comprehensive_score: number; draft?: boolean }) {
+    return api.post('/answer/leader-total', data)
+  },
+  revoke(relationId: number) {
+    return api.post(`/answer/relation/${relationId}/revoke`)
+  },
   submitBatch(data: { items: any[]; draft?: boolean }) {
     return api.post('/answer/batch', data)
   },

@@ -18,7 +18,11 @@
     "test:personal-summary": "tsx src/test/personal_summary_validation_test.ts",
     "test:self-question-policy": "tsx src/test/self_question_policy_test.ts",
     "test:managed-departments": "tsx src/test/managed_departments_test.ts",
-    "test:relation-policy": "tsx src/test/relation_policy_test.ts"
+    "test:relation-policy": "tsx src/test/relation_policy_test.ts",
+    "test:score-grade-policy": "tsx src/test/score_grade_policy_test.ts",
+    "test:leader-score-template": "tsx src/test/leader_score_template_test.ts",
+    "abcde:preflight": "tsx src/tools/migrate-abcde-policy.ts",
+    "abcde:apply": "tsx src/tools/migrate-abcde-policy.ts --apply"
   },
   "dependencies": {
     "@koa/cors": "^5.0.0",

@@ -11,26 +11,7 @@
       <div class="summary-count">{{ summaryCount }}</div>
     </section>
 
-    <section v-if="props.type === 'downward' && quota && !isLeaderDownward" class="quota-note">
-      <div class="quota-title">部门分档名额</div>
-      <div class="quota-grid">
-        <div class="quota-card high">
-          <span>81-100</span>
-          <b>{{ quota.high }}/{{ quota.highMax }}</b>
-          <em>剩 {{ quota.highRemain }}</em>
-        </div>
-        <div class="quota-card mid">
-          <span>71-80</span>
-          <b>{{ quota.mid }}/{{ quota.midMax }}</b>
-          <em>剩 {{ quota.midRemain }}</em>
-        </div>
-        <div class="quota-card low">
-          <span>0-70</span>
-          <b>{{ quota.low }}</b>
-          <em>还需 {{ quota.lowNeed }}</em>
-        </div>
-      </div>
-    </section>
+    <GradePolicyPanel v-if="props.type === 'downward' && quota && !isLeaderDownward" :policy="quota" />
 
     <section v-if="showDepartmentList" class="department-list">
       <button
@@ -108,6 +89,7 @@ import { closeToast, showLoadingToast, showToast } from 'vant'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { h5Api } from '../api'
+import GradePolicyPanel from '../components/GradePolicyPanel.vue'
 
 const props = defineProps<{ batchId: string; type: string }>()
 const router = useRouter()

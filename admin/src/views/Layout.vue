@@ -114,6 +114,7 @@ const pageTitle = computed(() => {
   if (route.path.startsWith('/matrix')) return '评估矩阵'
   if (route.path.startsWith('/self-question')) return '题目模板'
   if (route.path.startsWith('/relation')) return '评价关系'
+  if (route.path.startsWith('/leader-score')) return '领导评分'
   if (route.path.startsWith('/progress')) return '进度监控'
   return map[route.path] || '控制台'
 })

@@ -11,6 +11,9 @@ export interface AnswerRow {
   updated_at: string;
 }
 
+export const LEADER_PERFORMANCE_SEQ = -1;
+export const LEADER_COMPREHENSIVE_SEQ = -2;
+
 async function lockRelationForWrite(tx: DbExecutor, relationId: number): Promise<void> {
   await tx.queryOne('SELECT id FROM relation WHERE id = ? FOR UPDATE', [relationId]);
 }
@@ -114,6 +117,63 @@ export const AnswerModel = {
       );
       await tx.execute("UPDATE relation SET status = ?, updated_at = datetime('now') WHERE id = ?", [status, relationId]);
     });
+  },
+
+  async replaceDetailed(
+    tx: DbExecutor,
+    relationId: number,
+    answers: Array<{ seq: number; score: number }>,
+    status: 'pending' | 'draft' | 'completed',
+    isDraft = false
+  ): Promise<void> {
+    await tx.execute('DELETE FROM answer WHERE relation_id = ?', [relationId]);
+    for (const answer of answers) {
+      await tx.execute(
+        `INSERT INTO answer (relation_id, question_seq, score, is_total, is_draft)
+         VALUES (?, ?, ?, 0, ?)`,
+        [relationId, answer.seq, answer.score, isDraft ? 1 : 0]
+      );
+    }
+    const total = answers.reduce((sum, answer) => sum + answer.score, 0);
+    await tx.execute(
+      `INSERT INTO answer (relation_id, question_seq, score, is_total, is_draft)
+       VALUES (?, NULL, ?, 1, ?)`,
+      [relationId, total, isDraft ? 1 : 0]
+    );
+    await tx.execute("UPDATE relation SET status = ?, updated_at = datetime('now') WHERE id = ?", [status, relationId]);
+  },
+
+  async submitLeaderTotalsWithStatus(
+    relationId: number,
+    performanceScore: number,
+    comprehensiveScore: number,
+    status: 'draft' | 'completed'
+  ): Promise<void> {
+    await transaction(async tx => {
+      await lockRelationForWrite(tx, relationId);
+      await this.replaceLeaderTotals(tx, relationId, performanceScore, comprehensiveScore, status);
+    });
+  },
+
+  async replaceLeaderTotals(
+    tx: DbExecutor,
+    relationId: number,
+    performanceScore: number,
+    comprehensiveScore: number,
+    status: 'draft' | 'completed'
+  ): Promise<void> {
+    const isDraft = status === 'draft' ? 1 : 0;
+    await tx.execute('DELETE FROM answer WHERE relation_id = ?', [relationId]);
+    await tx.execute(
+      `INSERT INTO answer (relation_id, question_seq, score, is_total, is_draft)
+       VALUES (?, ?, ?, 0, ?), (?, ?, ?, 0, ?), (?, NULL, ?, 1, ?)`,
+      [
+        relationId, LEADER_PERFORMANCE_SEQ, performanceScore, isDraft,
+        relationId, LEADER_COMPREHENSIVE_SEQ, comprehensiveScore, isDraft,
+        relationId, performanceScore + comprehensiveScore, isDraft,
+      ]
+    );
+    await tx.execute("UPDATE relation SET status = ?, updated_at = datetime('now') WHERE id = ?", [status, relationId]);
   },
 
   async submitTotalWithStatus(

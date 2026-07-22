@@ -159,6 +159,25 @@ export const answerApi = {
   exportStatistics(batchId: number) {
     return api.get(`/answer/admin/statistics/${batchId}/export`, { responseType: 'blob' })
   },
+  leaderScores(batchId: number) {
+    return api.get(`/answer/admin/leader-score/${batchId}`)
+  },
+  exportLeaderScore(batchId: number, leaderId: number) {
+    return api.get(`/answer/admin/leader-score/${batchId}/${leaderId}/export`, { responseType: 'blob' })
+  },
+  previewLeaderScore(batchId: number, leaderId: number, file: File) {
+    const form = new FormData()
+    form.append('file', file)
+    return api.post(`/answer/admin/leader-score/${batchId}/${leaderId}/preview`, form)
+  },
+  importLeaderScore(batchId: number, leaderId: number, file: File, preview: any, confirmOverwrite: boolean) {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('file_hash', preview.file_hash)
+    form.append('reference_fingerprint', preview.reference_fingerprint)
+    form.append('confirm_overwrite', String(confirmOverwrite))
+    return api.post(`/answer/admin/leader-score/${batchId}/${leaderId}/import`, form)
+  },
 }
 
 export const departmentApi = {

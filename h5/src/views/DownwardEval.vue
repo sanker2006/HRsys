@@ -17,41 +17,26 @@
     </section>
 
     <PersonalSummaryDownload :relation-id="props.relationId" :summary="personalSummary" />
-
-    <section v-if="quota && !isLeaderRelation" class="quota-note">
-      <div class="quota-grid">
-        <div class="quota-card high">
-          <span>81-100</span>
-          <b>{{ quota.high }}/{{ quota.highMax }}</b>
-          <em>剩余 {{ quota.highRemain }}</em>
-        </div>
-        <div class="quota-card mid">
-          <span>71-80</span>
-          <b>{{ quota.mid }}/{{ quota.midMax }}</b>
-          <em>剩余 {{ quota.midRemain }}</em>
-        </div>
-        <div class="quota-card low">
-          <span>0-70</span>
-          <b>{{ quota.low }}</b>
-          <em>还需 {{ quota.lowNeed }}</em>
-        </div>
-      </div>
-    </section>
+    <GradePolicyPanel v-if="!isLeaderRelation" :policy="quota" />
 
     <van-notice-bar v-if="blockedReason && !isCompleted" color="#7c4a03" background="#f5e4bd">
       {{ blockedReason }}
     </van-notice-bar>
 
-    <section v-if="isLeaderStaffTotal" class="question-group">
+    <section v-if="isLeaderTotals" class="question-group">
       <article class="question-card total-card">
         <div class="card-head">
           <div>
-            <div class="question-text">领导综合评分</div>
-            <div class="total-help">只录入综合评价总分，范围 0-30 分</div>
+            <div class="question-text">领导业绩评分</div>
+            <div class="total-help">业绩总分，范围0-70分</div>
           </div>
-          <div class="score-pill">{{ formatNumber(totalScore) }}</div>
+          <div class="score-pill">{{ formatNumber(leaderPerformance) }}</div>
         </div>
-        <van-slider v-model="totalScore" :min="0" :max="30" :step="0.1" :disabled="isReadonly" />
+        <van-slider v-model="leaderPerformance" :min="0" :max="70" :step="0.1" :disabled="isReadonly" />
+      </article>
+      <article class="question-card total-card">
+        <div class="card-head"><div><div class="question-text">领导综合评分</div><div class="total-help">综合总分，范围0-30分</div></div><div class="score-pill">{{ formatNumber(leaderComprehensive) }}</div></div>
+        <van-slider v-model="leaderComprehensive" :min="0" :max="30" :step="0.1" :disabled="isReadonly" />
       </article>
     </section>
 
@@ -60,14 +45,14 @@
       <article v-for="q in performanceQuestions" :key="q.answer_seq" class="question-card">
         <div class="card-head">
           <div class="question-text">{{ q.content }}</div>
-          <div v-if="!isLeaderStaffTotal" class="score-pill">{{ formatNumber(answers[q.answer_seq] ?? 0) }}</div>
+          <div v-if="!isLeaderTotals" class="score-pill">{{ formatNumber(answers[q.answer_seq] ?? 0) }}</div>
         </div>
         <div class="meta-line">
           <span>满分 {{ formatNumber(q.weight) }} 分</span>
           <span v-if="q.self_score !== null && q.self_score !== undefined">{{ selfScoreLabel }} {{ formatNumber(q.self_score) }} 分</span>
           <span v-if="q.manager_score !== null && q.manager_score !== undefined">主管评分 {{ formatNumber(q.manager_score) }} 分</span>
         </div>
-        <van-slider v-if="!isLeaderStaffTotal" v-model="answers[q.answer_seq]" :min="0" :max="q.weight" :step="0.1" :disabled="isReadonly" />
+        <van-slider v-if="!isLeaderTotals" v-model="answers[q.answer_seq]" :min="0" :max="q.weight" :step="0.1" :disabled="isReadonly" />
       </article>
     </section>
 
@@ -76,14 +61,14 @@
       <article v-for="q in comprehensiveQuestions" :key="q.answer_seq" class="question-card">
         <div class="card-head">
           <div class="question-text">{{ q.content }}</div>
-          <div v-if="!isLeaderStaffTotal" class="score-pill">{{ formatNumber(answers[q.answer_seq] ?? 0) }}</div>
+          <div v-if="!isLeaderTotals" class="score-pill">{{ formatNumber(answers[q.answer_seq] ?? 0) }}</div>
         </div>
         <div class="meta-line">
           <span>满分 {{ formatNumber(q.weight) }} 分</span>
           <span v-if="q.self_score !== null && q.self_score !== undefined">{{ selfScoreLabel }} {{ formatNumber(q.self_score) }} 分</span>
           <span v-if="q.manager_score !== null && q.manager_score !== undefined">主管评分 {{ formatNumber(q.manager_score) }} 分</span>
         </div>
-        <van-slider v-if="!isLeaderStaffTotal" v-model="answers[q.answer_seq]" :min="0" :max="q.weight" :step="0.1" :disabled="isReadonly" />
+        <van-slider v-if="!isLeaderTotals" v-model="answers[q.answer_seq]" :min="0" :max="q.weight" :step="0.1" :disabled="isReadonly" />
       </article>
     </section>
 
@@ -96,7 +81,8 @@
         <van-button class="btn ghost" :loading="nexting" @click="goNext">下一个人</van-button>
       </template>
       <template v-else>
-        <van-button class="btn secondary" @click="router.back()">返回目录</van-button>
+        <van-button v-if="!isLeaderRelation" class="btn danger" :loading="revoking" @click="revokeScore">撤销评分</van-button>
+        <van-button v-else class="btn secondary" @click="router.back()">返回目录</van-button>
         <van-button class="btn primary" type="primary" :loading="nexting" @click="goNext">下一个人</van-button>
       </template>
     </div>
@@ -109,6 +95,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { h5Api } from '../api'
 import PersonalSummaryDownload from '../components/PersonalSummaryDownload.vue'
+import GradePolicyPanel from '../components/GradePolicyPanel.vue'
 
 const props = defineProps<{ batchId: string; relationId: string }>()
 const router = useRouter()
@@ -122,21 +109,24 @@ const performanceQuestions = ref<any[]>([])
 const comprehensiveQuestions = ref<any[]>([])
 const answers = reactive<Record<number, number>>({})
 const totalScore = ref(0)
+const leaderPerformance = ref(0)
+const leaderComprehensive = ref(0)
 const blockedReason = ref('')
 const selfTotal = ref<number | null>(null)
 const managerTotal = ref<number | null>(null)
 const drafting = ref(false)
 const submitting = ref(false)
 const nexting = ref(false)
+const revoking = ref(false)
 const savedSnapshot = ref('')
 
 const targetName = computed(() => relation.value?.target_name || '向下评价')
 const isCompleted = computed(() => relation.value?.status === 'completed')
 const isLeaderRelation = computed(() => ['main_leader', 'division_leader'].includes(relation.value?.evaluator_level))
-const isLeaderStaffTotal = computed(() => mode.value === 'leader_staff_total')
+const isLeaderTotals = computed(() => mode.value === 'leader_totals')
 const isReadonly = computed(() => isCompleted.value || !!blockedReason.value)
 const detailTotal = computed(() => Number(Object.values(answers).reduce((sum, value) => sum + Number(value || 0), 0).toFixed(1)))
-const displayTotal = computed(() => Number((isLeaderStaffTotal.value ? totalScore.value : detailTotal.value).toFixed(1)))
+const displayTotal = computed(() => Number((isLeaderTotals.value ? leaderPerformance.value + leaderComprehensive.value : detailTotal.value).toFixed(1)))
 const hasDirty = computed(() => snapshotAnswers() !== savedSnapshot.value)
 const selfScoreLabel = computed(() => relation.value?.target_level === 'manager' ? '负责人自评' : '员工自评')
 const currentScoreLabel = computed(() => isLeaderRelation.value ? '领导评分' : '主管评分')
@@ -165,7 +155,7 @@ function formatNumber(value: number | string | null | undefined) {
 }
 
 function snapshotAnswers() {
-  if (isLeaderStaffTotal.value) return JSON.stringify({ total: Number(totalScore.value || 0) })
+  if (isLeaderTotals.value) return JSON.stringify({ performance: leaderPerformance.value, comprehensive: leaderComprehensive.value })
   return JSON.stringify(Object.keys(answers).sort().map(key => [key, answers[Number(key)]]))
 }
 
@@ -178,7 +168,6 @@ function collectAnswers() {
 
 async function loadOverview() {
   const res: any = await h5Api.getDownwardOverview(Number(props.batchId))
-  quota.value = res.data?.quota || null
   list.value = res.data?.list || []
 }
 
@@ -191,6 +180,9 @@ async function loadDetail() {
   blockedReason.value = data.can_submit === false ? data.blocked_reason || '当前暂不能提交' : ''
   selfTotal.value = data.self_total ?? null
   managerTotal.value = data.manager_total ?? null
+  quota.value = data.grade_policy || null
+  leaderPerformance.value = Number(data.leader_performance_score || 0)
+  leaderComprehensive.value = Number(data.leader_comprehensive_score || 0)
   performanceQuestions.value = data.performance_questions || []
   comprehensiveQuestions.value = data.comprehensive_questions || []
   totalScore.value = 0
@@ -217,8 +209,8 @@ async function submit(draft: boolean) {
   else submitting.value = true
   try {
     showLoadingToast({ message: draft ? '保存中...' : '提交中...', forbidClick: true })
-    if (isLeaderStaffTotal.value) {
-      await h5Api.submitTotal({ relation_id: Number(props.relationId), score: Number(totalScore.value || 0), draft })
+    if (isLeaderTotals.value) {
+      await h5Api.submitLeaderTotals({ relation_id: Number(props.relationId), performance_score: leaderPerformance.value, comprehensive_score: leaderComprehensive.value, draft })
     } else {
       await h5Api.submitDetail({ relation_id: Number(props.relationId), answers: collectAnswers(), draft })
     }
@@ -230,6 +222,18 @@ async function submit(draft: boolean) {
     drafting.value = false
     submitting.value = false
   }
+}
+
+async function revokeScore() {
+  try {
+    await showConfirmDialog({ title: '撤销评分', message: '撤销后将退回草稿，可修改后重新提交。', confirmButtonText: '确认撤销', showCancelButton: true })
+  } catch { return }
+  revoking.value = true
+  try {
+    await h5Api.revoke(Number(props.relationId))
+    showToast('已撤销，评分已退回草稿')
+    await Promise.all([loadOverview(), loadDetail()])
+  } finally { revoking.value = false }
 }
 
 async function goNext() {
@@ -413,6 +417,7 @@ watch(() => props.relationId, loadPage)
 .secondary { color: var(--hr-accent-strong) !important; border: 1px solid #8eb9d4 !important; background: #dbeafe !important; }
 .ghost { color: var(--hr-text) !important; border: 1px solid #b8c9da !important; background: var(--hr-surface-strong) !important; }
 .primary { color: #fff !important; background: #036486 !important; border: 1px solid #036486 !important; box-shadow: 0 10px 22px rgba(3,100,134,.30); }
+.danger { color: #9f1239 !important; border: 1px solid #d59aaa !important; background: #fff1f2 !important; }
 
 @media (max-width: 380px) {
   .quota-note { margin-inline: 10px; padding: 12px; }

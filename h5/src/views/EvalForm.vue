@@ -19,15 +19,21 @@
 
     <PersonalSummaryDownload :relation-id="props.relationId" :summary="personalSummary" />
 
-    <section v-if="mode === 'leader_staff_total'" class="question-card total-card">
+    <section v-if="mode === 'leader_totals'" class="question-group">
+      <article class="question-card total-card">
       <div class="card-head">
         <div>
-          <div class="card-kicker">领导综合评分</div>
-          <div class="question-text">只需输入综合评价总分，满分 30 分。</div>
+          <div class="card-kicker">领导业绩评分</div>
+          <div class="question-text">业绩总分，满分70分</div>
         </div>
-        <div class="score-pill">{{ totalScore.toFixed(1) }}</div>
+        <div class="score-pill">{{ leaderPerformance.toFixed(1) }}</div>
       </div>
-      <van-slider v-model="totalScore" :min="0" :max="30" :step="0.1" :disabled="isReadonly" />
+      <van-slider v-model="leaderPerformance" :min="0" :max="70" :step="0.1" :disabled="isReadonly" />
+      </article>
+      <article class="question-card total-card">
+        <div class="card-head"><div><div class="card-kicker">领导综合评分</div><div class="question-text">综合总分，满分30分</div></div><div class="score-pill">{{ leaderComprehensive.toFixed(1) }}</div></div>
+        <van-slider v-model="leaderComprehensive" :min="0" :max="30" :step="0.1" :disabled="isReadonly" />
+      </article>
     </section>
 
     <template v-else>
@@ -66,6 +72,14 @@
 
     <div v-if="isCompleted" class="completed">当前评价已完成提交</div>
 
+    <div v-if="isCompleted && mode !== 'leader_totals'" class="actions">
+      <van-button class="btn danger" :loading="revoking" @click="revokeScore">撤销评分</van-button>
+      <van-button class="btn secondary" @click="router.back()">返回目录</van-button>
+    </div>
+    <div v-if="isCompleted && mode === 'leader_totals'" class="actions">
+      <van-button class="btn secondary" @click="router.back()">返回目录</van-button>
+    </div>
+
     <div v-if="!isCompleted" class="actions">
       <van-button class="btn secondary" :disabled="isReadonly" :loading="drafting" @click="submit(true)">保存草稿</van-button>
       <van-button class="btn primary" type="primary" :disabled="!!blockedReason" :loading="submitting" @click="confirmSubmit = true">
@@ -86,7 +100,7 @@
 </template>
 
 <script setup lang="ts">
-import { closeToast, showLoadingToast, showToast } from 'vant'
+import { closeToast, showConfirmDialog, showLoadingToast, showToast } from 'vant'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { h5Api } from '../api'
@@ -103,9 +117,12 @@ const performanceQuestions = ref<any[]>([])
 const comprehensiveQuestions = ref<any[]>([])
 const answers = reactive<Record<number, number>>({})
 const totalScore = ref(0)
+const leaderPerformance = ref(0)
+const leaderComprehensive = ref(0)
 const drafting = ref(false)
 const submitting = ref(false)
 const confirmSubmit = ref(false)
+const revoking = ref(false)
 
 const targetName = computed(() => relation.value?.target_name || '评价')
 const isCompleted = computed(() => relation.value?.status === 'completed')
@@ -116,7 +133,7 @@ const relationLabel = computed(() => {
   return '向下评价'
 })
 const detailedTotal = computed(() => Object.values(answers).reduce((sum, value) => sum + Number(value || 0), 0))
-const displayTotal = computed(() => Number((mode.value === 'leader_staff_total' ? totalScore.value : detailedTotal.value).toFixed(1)))
+const displayTotal = computed(() => Number((mode.value === 'leader_totals' ? leaderPerformance.value + leaderComprehensive.value : detailedTotal.value).toFixed(1)))
 
 function collectAnswers() {
   return [...performanceQuestions.value, ...comprehensiveQuestions.value].map((q: any) => ({
@@ -139,7 +156,7 @@ async function submit(draft: boolean) {
   if (draft) drafting.value = true
   else submitting.value = true
   try {
-    if (!draft && mode.value !== 'leader_staff_total') {
+    if (!draft && mode.value !== 'leader_totals') {
       const missing = collectAnswers().filter(a => answers[a.seq] === undefined)
       if (missing.length) {
         showToast(`还有 ${missing.length} 道题未评分`)
@@ -147,8 +164,8 @@ async function submit(draft: boolean) {
       }
     }
     showLoadingToast({ message: draft ? '保存中...' : '提交中...', forbidClick: true })
-    if (mode.value === 'leader_staff_total') {
-      await h5Api.submitTotal({ relation_id: Number(props.relationId), score: totalScore.value, draft })
+    if (mode.value === 'leader_totals') {
+      await h5Api.submitLeaderTotals({ relation_id: Number(props.relationId), performance_score: leaderPerformance.value, comprehensive_score: leaderComprehensive.value, draft })
     } else if (relation.value?.eval_type === 'self') {
       await h5Api.submitSelf({ relation_id: Number(props.relationId), answers: collectAnswers(), draft })
     } else {
@@ -163,6 +180,19 @@ async function submit(draft: boolean) {
   }
 }
 
+async function revokeScore() {
+  try {
+    await showConfirmDialog({ title: '撤销评分', message: '撤销后将退回草稿，可修改后重新提交。', confirmButtonText: '确认撤销', showCancelButton: true })
+  } catch { return }
+  revoking.value = true
+  try {
+    await h5Api.revoke(Number(props.relationId))
+    showToast('已撤销，评分已退回草稿')
+    const res: any = await h5Api.getRelationDetail(Number(props.relationId))
+    relation.value = res.data?.relation
+  } finally { revoking.value = false }
+}
+
 onMounted(async () => {
   showLoadingToast({ message: '加载中...', forbidClick: true })
   try {
@@ -174,6 +204,8 @@ onMounted(async () => {
     blockedReason.value = data.can_submit === false ? data.blocked_reason || '当前暂不能提交' : ''
     performanceQuestions.value = data.performance_questions || []
     comprehensiveQuestions.value = data.comprehensive_questions || []
+    leaderPerformance.value = Number(data.leader_performance_score || 0)
+    leaderComprehensive.value = Number(data.leader_comprehensive_score || 0)
     for (const a of data.answers || []) {
       if (a.is_total) totalScore.value = Number(a.score || 0)
       else if (a.question_seq !== null) answers[a.question_seq] = Number(a.score || 0)
@@ -276,4 +308,5 @@ onMounted(async () => {
 .btn { flex: 1; height: 52px; border-radius: 12px; font-size: 15px; font-weight: 900; }
 .secondary { color: var(--hr-accent-strong) !important; border: 1px solid #8eb9d4 !important; background: #dbeafe !important; }
 .primary { color: #fff !important; background: #036486 !important; border: 1px solid #036486 !important; box-shadow: 0 10px 22px rgba(3,100,134,.30); }
+.danger { color: #9f1239 !important; border: 1px solid #d59aaa !important; background: #fff1f2 !important; }
 </style>

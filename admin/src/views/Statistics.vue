@@ -49,7 +49,7 @@
         <div class="card-titlebar">
           <div class="card-title">
             <strong>统计明细</strong>
-            <span>业绩分按领导评价 70% + 自评价 30%；综合分按角色对应权重计算。</span>
+            <span>领导对员工业绩已单独记录，暂不纳入现行业绩计算；最终分仍按当前公式计算。</span>
           </div>
         </div>
       </template>
@@ -68,11 +68,20 @@
         <el-table-column prop="role_label" label="角色" width="110" />
 
         <el-table-column label="业绩分">
+          <el-table-column label="员工自评" width="110" align="center">
+            <template #default="{ row }">{{ scoreText(row.performance_self_score) }}</template>
+          </el-table-column>
+          <el-table-column label="部门负责人" width="120" align="center">
+            <template #default="{ row }">{{ scoreText(row.performance_manager_score) }}</template>
+          </el-table-column>
+          <el-table-column label="分管领导" width="110" align="center">
+            <template #default="{ row }">{{ scoreText(row.performance_division_leader_score) }}</template>
+          </el-table-column>
+          <el-table-column label="主要领导" width="110" align="center">
+            <template #default="{ row }">{{ scoreText(row.performance_main_leader_score) }}</template>
+          </el-table-column>
           <el-table-column label="领导评价" width="110" align="center">
             <template #default="{ row }">{{ scoreText(row.performance_leader_score) }}</template>
-          </el-table-column>
-          <el-table-column label="自评价" width="100" align="center">
-            <template #default="{ row }">{{ scoreText(row.performance_self_score) }}</template>
           </el-table-column>
           <el-table-column label="计算分" width="100" align="center">
             <template #default="{ row }"><b>{{ scoreText(row.performance_score) }}</b></template>
