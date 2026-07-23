@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { gradeBlockedMessage, gradeCapacityText, gradeConfirmMessage } from './gradePreview'
-import { gradeConstraintStatusLines, gradeProgressText, gradeRuleText } from './gradePolicyDisplay'
+import {
+  gradeConstraintStatusLines,
+  gradePolicyExplanation,
+  gradeProgressText,
+  gradeRuleText,
+} from './gradePolicyDisplay'
 
 describe('grade preview messages', () => {
   const preview = {
@@ -45,6 +50,9 @@ describe('grade policy display', () => {
     }
     expect(gradeRuleText(policy, 'D')).toBe('至少1人')
     expect(gradeProgressText(policy, 'D')).toBe('还需 1 人')
+    expect(gradePolicyExplanation(policy)).toBe(
+      'D级为最低人数要求，不设独立上限；系统会为尚未满足的最低档预留人数。',
+    )
   })
 
   it('shows combined exact constraints for a four-person group', () => {
@@ -60,6 +68,9 @@ describe('grade policy display', () => {
     expect(gradeRuleText(policy, 'A')).toBe('A+B级合计1人')
     expect(gradeProgressText(policy, 'D')).toBe('组合还需 1 人')
     expect(gradeConstraintStatusLines(policy)).toContain('C+D级：当前1人，要求2人，还需1人')
+    expect(gradePolicyExplanation(policy)).toBe(
+      '本组要求：A+B级合计1人，C+D级合计2人，E级1人。',
+    )
   })
 
   it('marks grades without a constraint as unlimited', () => {
@@ -73,5 +84,6 @@ describe('grade policy display', () => {
     expect(gradeRuleText(policy, 'B')).toBe('人数不限')
     expect(gradeProgressText(policy, 'B')).toBe('无人数限制')
     expect(gradeConstraintStatusLines(policy)).toContain('B级、C级、D级、E级：人数不限')
+    expect(gradePolicyExplanation(policy)).toBeNull()
   })
 })

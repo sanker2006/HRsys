@@ -94,6 +94,25 @@ export function gradeConstraintStatusLines(policy: GradePolicyDisplaySource): st
   return lines
 }
 
-export function hasLowerBoundConstraint(policy: GradePolicyDisplaySource): boolean {
-  return (policy.constraints ?? []).some(constraint => constraint.min > 0)
+export function gradePolicyExplanation(policy: GradePolicyDisplaySource): string | null {
+  const constraints = policy.constraints ?? []
+  const combined = constraints.filter(constraint => constraint.grades.length > 1)
+  if (combined.length > 0) {
+    const parts = constraints.map(constraint => {
+      if (constraint.grades.length > 1) {
+        return `${constraint.label}合计${constraint.min}人`
+      }
+      if (constraint.min === constraint.max) {
+        return `${constraint.label}${constraint.min}人`
+      }
+      return `${constraint.label}${constraint.min}～${constraint.max}人`
+    })
+    return `本组要求：${parts.join('，')}。`
+  }
+
+  const lowerOnly = constraints.filter(constraint => isLowerOnly(policy, constraint))
+  if (lowerOnly.length > 0) {
+    return `${lowerOnly.map(constraint => constraint.label).join('、')}为最低人数要求，不设独立上限；系统会为尚未满足的最低档预留人数。`
+  }
+  return null
 }
