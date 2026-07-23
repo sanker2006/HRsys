@@ -17,4 +17,5 @@ export const config = {
     .split(',')
     .map(origin => origin.trim())
     .filter(Boolean),
+  slowRequestMs: Math.max(100, Number(process.env.SLOW_REQUEST_MS || '500')),
 };

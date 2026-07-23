@@ -3,10 +3,12 @@ import { koaBody } from 'koa-body';
 import cors from '@koa/cors';
 import { config } from './config/index.js';
 import { error } from './middleware/error.js';
+import { performance } from './middleware/performance.js';
 import router from './route/index.js';
 
 const app = new Koa();
 
+app.use(performance);
 app.use(error);
 app.use(cors({
   origin: (ctx: any) => {
@@ -17,6 +19,7 @@ app.use(cors({
   },
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization'],
+  exposeHeaders: ['Server-Timing', 'X-Request-ID'],
 }));
 app.use(koaBody({
   jsonLimit: '10mb',

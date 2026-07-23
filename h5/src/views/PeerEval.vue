@@ -55,6 +55,7 @@ import { useRouter } from 'vue-router'
 import { h5Api } from '../api'
 import PersonalSummaryDownload from '../components/PersonalSummaryDownload.vue'
 import GradePolicyPanel from '../components/GradePolicyPanel.vue'
+import { reportClientPerformance } from '../utils/performance'
 
 const props = defineProps<{ batchId: string; relationId: string }>()
 const router = useRouter()
@@ -71,6 +72,7 @@ const submitting = ref(false)
 const nexting = ref(false)
 const revoking = ref(false)
 const savedSnapshot = ref('')
+let listPromise: Promise<void> | null = null
 
 const targetName = computed(() => relation.value?.target_name || '同级互评')
 const isCompleted = computed(() => relation.value?.status === 'completed')
@@ -105,6 +107,16 @@ async function loadList() {
   list.value = (res.data?.list || []).filter((r: any) => r.eval_type === 'peer')
 }
 
+async function ensureList(force = false) {
+  if (!force && list.value.length > 0) return
+  if (listPromise) {
+    if (!force) return listPromise
+    try { await listPromise } catch {}
+  }
+  listPromise = loadList().finally(() => { listPromise = null })
+  return listPromise
+}
+
 async function loadDetail() {
   loading.value = true
   try {
@@ -133,7 +145,7 @@ async function revokeScore() {
   try {
     await h5Api.revoke(Number(props.relationId))
     showToast('已撤销，评分已退回草稿')
-    await Promise.all([loadList(), loadDetail()])
+    await Promise.all([ensureList(true), loadDetail()])
   } finally { revoking.value = false }
 }
 
@@ -146,7 +158,7 @@ async function submit(draft: boolean) {
     await h5Api.submitDetail({ relation_id: Number(props.relationId), answers: collectAnswers(), draft })
     closeToast()
     showToast(draft ? '草稿已保存' : '提交成功')
-    await Promise.all([loadList(), loadDetail()])
+    await Promise.all([ensureList(true), loadDetail()])
   } finally {
     drafting.value = false
     submitting.value = false
@@ -167,7 +179,7 @@ async function goNext() {
   }
   nexting.value = true
   try {
-    if (!list.value.length) await loadList()
+    if (!list.value.length) await ensureList()
     const current = Number(props.relationId)
     const start = list.value.findIndex(item => item.id === current)
     const ordered = [...list.value.slice(start + 1), ...list.value.slice(0, Math.max(0, start + 1))]
@@ -183,9 +195,16 @@ async function goNext() {
 }
 
 async function loadPage() {
+  const startedAt = performance.now()
   showLoadingToast({ message: '加载中...', forbidClick: true })
+  void ensureList().catch(() => {})
   try {
-    await Promise.all([loadList(), loadDetail()])
+    await loadDetail()
+    reportClientPerformance({
+      kind: 'view',
+      name: '/peer-eval/detail-ready',
+      duration_ms: performance.now() - startedAt,
+    })
   } finally {
     closeToast()
   }

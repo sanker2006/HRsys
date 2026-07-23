@@ -57,6 +57,7 @@ import { closeToast, showLoadingToast } from 'vant'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { h5Api } from '../api'
+import { preloadWhenIdle } from '../router/loaders'
 
 const props = defineProps<{ batchId: string }>()
 const router = useRouter()
@@ -130,6 +131,8 @@ async function loadRelations() {
     ])
     relations.value = r.data?.list || []
     batch.value = await b
+    if (relations.value.some(item => item.eval_type === 'self')) preloadWhenIdle('self-detail')
+    if (relations.value.some(item => item.eval_type !== 'self')) preloadWhenIdle('batch')
   } finally {
     loading.value = false
     refreshing.value = false

@@ -32,6 +32,10 @@ const REL_SELECT = `
   t.position as target_position, t.level as target_level
 `;
 
+function placeholders(values: unknown[]): string {
+  return values.map(() => '?').join(',');
+}
+
 export const RelationModel = {
   findById(id: number): Promise<RelationRow | undefined> {
     return queryOne<RelationRow>(
@@ -95,6 +99,46 @@ export const RelationModel = {
        WHERE r.batch_id = ? AND r.evaluator_id = ?
        ORDER BY r.eval_type, t.name`,
       [batchId, evaluatorId]
+    );
+  },
+
+  findEvaluationContextRelations(batchId: number, targetIds: number[]): Promise<RelationRow[]> {
+    const ids = [...new Set(targetIds)].filter(Number.isFinite);
+    if (ids.length === 0) return Promise.resolve([]);
+    const marks = placeholders(ids);
+    return queryAll<RelationRow>(
+      `SELECT ${REL_SELECT} FROM relation r
+       JOIN app_user e ON r.evaluator_id = e.id
+       JOIN app_user t ON r.target_id = t.id
+       WHERE r.batch_id = ?
+         AND (
+           (r.eval_type = 'self' AND r.evaluator_id = r.target_id AND r.target_id IN (${marks}))
+           OR
+           (r.eval_type = 'downward' AND e.level = 'manager' AND r.target_id IN (${marks}))
+         )
+       ORDER BY r.evaluator_id, r.eval_type, t.name, r.id`,
+      [batchId, ...ids, ...ids]
+    );
+  },
+
+  async findManagerStaffCompletion(
+    batchId: number,
+    managerIds: number[]
+  ): Promise<Array<{ manager_id: number; total: number; completed: number }>> {
+    const ids = [...new Set(managerIds)].filter(Number.isFinite);
+    if (ids.length === 0) return [];
+    return queryAll<{ manager_id: number; total: number; completed: number }>(
+      `SELECT r.evaluator_id AS manager_id,
+              COUNT(*) AS total,
+              SUM(CASE WHEN r.status = 'completed' THEN 1 ELSE 0 END) AS completed
+       FROM relation r
+       JOIN app_user t ON r.target_id = t.id
+       WHERE r.batch_id = ?
+         AND r.eval_type = 'downward'
+         AND r.evaluator_id IN (${placeholders(ids)})
+         AND t.level = 'staff'
+       GROUP BY r.evaluator_id`,
+      [batchId, ...ids]
     );
   },
 

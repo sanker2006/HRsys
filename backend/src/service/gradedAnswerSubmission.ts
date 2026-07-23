@@ -70,6 +70,20 @@ async function validateGroup(
   forUpdate = true
 ): Promise<GradePolicyResult> {
   const rows = await groupRelations(tx, group, forUpdate);
+  const completedIds = rows
+    .filter(row => !incoming.has(row.id) && row.status === 'completed')
+    .map(row => row.id);
+  const totals = new Map<number, number>();
+  if (completedIds.length > 0) {
+    const placeholders = completedIds.map(() => '?').join(',');
+    const totalRows = await tx.queryAll<{ relation_id: number; score: number }>(
+      `SELECT relation_id, score
+       FROM answer
+       WHERE is_total = 1 AND relation_id IN (${placeholders})`,
+      completedIds
+    );
+    for (const row of totalRows) totals.set(row.relation_id, Number(row.score));
+  }
   const scores: number[] = [];
   for (const row of rows) {
     if (incoming.has(row.id)) {
@@ -77,11 +91,8 @@ async function validateGroup(
       continue;
     }
     if (row.status !== 'completed') continue;
-    const total = await tx.queryOne<{ score: number }>(
-      'SELECT score FROM answer WHERE relation_id = ? AND is_total = 1 LIMIT 1',
-      [row.id]
-    );
-    if (total && Number.isFinite(Number(total.score))) scores.push(Number(total.score));
+    const total = totals.get(row.id);
+    if (total !== undefined && Number.isFinite(total)) scores.push(total);
   }
   return evaluateGradePolicy(scores, rows.length, group.scale);
 }

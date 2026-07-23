@@ -20,6 +20,8 @@ import {
   Tabbar,
   TabbarItem,
   Dialog,
+  Icon,
+  NoticeBar,
 } from 'vant'
 
 const vantComponents = [
@@ -39,6 +41,8 @@ const vantComponents = [
   Tabbar,
   TabbarItem,
   Dialog,
+  Icon,
+  NoticeBar,
 ]
 
 const app = createApp(App)

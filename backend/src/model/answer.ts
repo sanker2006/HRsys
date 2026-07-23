@@ -35,6 +35,19 @@ export const AnswerModel = {
     );
   },
 
+  async findTotalsByRelationIds(relationIds: number[]): Promise<Map<number, number | null>> {
+    const ids = [...new Set(relationIds)].filter(Number.isFinite);
+    if (ids.length === 0) return new Map();
+    const placeholders = ids.map(() => '?').join(',');
+    const rows = await queryAll<{ relation_id: number; score: number | null }>(
+      `SELECT relation_id, score
+       FROM answer
+       WHERE is_total = 1 AND relation_id IN (${placeholders})`,
+      ids
+    );
+    return new Map(rows.map(row => [row.relation_id, row.score]));
+  },
+
   findByRelationAndSeq(relationId: number, seq: number): Promise<AnswerRow | undefined> {
     return queryOne<AnswerRow>(
       'SELECT * FROM answer WHERE relation_id = ? AND question_seq = ?',

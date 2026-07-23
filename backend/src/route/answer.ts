@@ -10,6 +10,12 @@ import { success, fail } from '../utils/response.js';
 import { auth } from '../middleware/auth.js';
 import { execute, queryAll, transaction, type DbExecutor } from '../db/query.js';
 import { getGradePolicyForRelation, submitDetailedItems } from '../service/gradedAnswerSubmission.js';
+import {
+  buildQuestionContextFromReadContext,
+  canEvaluateFromContext,
+  loadEvaluationReadContext,
+  type EvaluationReadContext,
+} from '../service/answerReadContext.js';
 import type { Context } from 'koa';
 
 const router = new Router({ prefix: '/api/v1/answer' });
@@ -39,107 +45,13 @@ function isLeaderTotalRelation(relation: RelationRow): boolean {
     && (relation.target_level === 'staff' || relation.target_level === 'manager');
 }
 
-async function getSelfRelation(batchId: number, userId: number): Promise<RelationRow | undefined> {
-  return (await RelationModel.findByBatchId(batchId, {
-    evaluator_id: userId,
-    target_id: userId,
-    eval_type: 'self',
-  }))[0];
-}
-
-async function getManagerDownwardRelation(batchId: number, targetId: number): Promise<RelationRow | undefined> {
-  return (await RelationModel.findByBatchId(batchId, { target_id: targetId, eval_type: 'downward' }))
-    .find(r => r.evaluator_level === 'manager');
-}
-
-async function managerHasCompletedDepartment(batchId: number, managerId: number): Promise<boolean> {
-  const rows = (await RelationModel.findByBatchId(batchId, { evaluator_id: managerId, eval_type: 'downward' }))
-    .filter(r => r.target_level === 'staff');
-  return rows.length > 0 && rows.every(r => r.status === 'completed');
-}
-
 async function canEvaluate(relation: RelationRow): Promise<{ ok: boolean; reason?: string }> {
-  if (relation.eval_type === 'self' || relation.eval_type === 'peer') return { ok: true };
-
-  if (relation.evaluator_level === 'manager' && relation.target_level === 'staff') {
-    const selfRel = await getSelfRelation(relation.batch_id, relation.target_id);
-    if (!selfRel || selfRel.status !== 'completed') {
-      return { ok: false, reason: '员工正式提交自评后，部门负责人才能评价' };
-    }
-    return { ok: true };
-  }
-
-  if (relation.evaluator_level === 'division_leader' || relation.evaluator_level === 'main_leader') {
-    if (relation.target_level === 'manager') {
-      const selfRel = await getSelfRelation(relation.batch_id, relation.target_id);
-      if (!selfRel || selfRel.status !== 'completed') {
-        return { ok: false, reason: '部门负责人正式提交自评后，领导才能评价' };
-      }
-      if (!(await managerHasCompletedDepartment(relation.batch_id, relation.target_id))) {
-        return { ok: false, reason: '部门负责人完成所负责部门的所有员工评分后，领导才能评价' };
-      }
-      return { ok: true };
-    }
-
-    if (relation.target_level === 'staff') {
-      const managerRel = await getManagerDownwardRelation(relation.batch_id, relation.target_id);
-      if (!managerRel || managerRel.status !== 'completed') {
-        return { ok: false, reason: '部门负责人完成该员工评分后，领导才能评价' };
-      }
-      if (!(await managerHasCompletedDepartment(relation.batch_id, managerRel.evaluator_id))) {
-        return { ok: false, reason: '部门负责人完成所负责部门的所有员工评分后，领导才能评价该部门人员' };
-      }
-      return { ok: true };
-    }
-  }
-
-  return { ok: true };
+  return canEvaluateFromContext(relation, await loadEvaluationReadContext([relation]));
 }
 
 async function buildQuestionContext(relation: RelationRow) {
-  const sq = await SelfQuestionModel.findByBatchAndUser(relation.batch_id, relation.target_id);
-  if (!sq) return null;
-  const exportRow = SelfQuestionModel.toExportFormat([sq])[0];
-  const answersBySeq = new Map<number, AnswerRow>();
-
-  const selfRel = await getSelfRelation(relation.batch_id, relation.target_id);
-  const selfScores = selfRel ? await AnswerModel.findByRelationId(selfRel.id) : [];
-  for (const a of selfScores) {
-    if (a.question_seq !== null && a.is_total === 0) answersBySeq.set(a.question_seq, a);
-  }
-
-  const managerRel = relation.target_level === 'staff'
-    ? await getManagerDownwardRelation(relation.batch_id, relation.target_id)
-    : undefined;
-  const managerScores = managerRel ? await AnswerModel.findByRelationId(managerRel.id) : [];
-  const managerScoreBySeq = new Map<number, AnswerRow>();
-  for (const a of managerScores) {
-    if (a.question_seq !== null && a.is_total === 0) managerScoreBySeq.set(a.question_seq, a);
-  }
-
-  function enrich(q: QuestionItem) {
-    return {
-      ...q,
-      self_score: answersBySeq.get(q.answer_seq)?.score ?? null,
-      manager_score: managerScoreBySeq.get(q.answer_seq)?.score ?? null,
-    };
-  }
-
-  const performanceQuestions = relation.eval_type === 'peer'
-    ? []
-    : exportRow.performance_questions.map(enrich);
-  const comprehensiveQuestions = exportRow.comprehensive_questions.map(enrich);
-
-  return {
-    ...exportRow,
-    performance_questions: performanceQuestions,
-    comprehensive_questions: comprehensiveQuestions,
-    questions: relation.eval_type === 'peer'
-      ? comprehensiveQuestions
-      : [...performanceQuestions, ...comprehensiveQuestions],
-    self_total: totalOfAnswers(selfScores),
-    manager_total: totalOfAnswers(managerScores),
-  };
+  const readContext = await loadEvaluationReadContext([relation]);
+  return buildQuestionContextFromReadContext(relation, readContext);
 }
 
 async function questionSetForRelation(relation: RelationRow): Promise<QuestionItem[]> {
@@ -215,9 +127,9 @@ async function canSubmitForBatch(batchId: number): Promise<{ ok: boolean; messag
   return result.ok ? { ok: true } : { ok: false, message: result.message };
 }
 
-async function buildRelationSummary(relation: RelationRow) {
-  const context = await buildQuestionContext(relation);
-  const gate = await canEvaluate(relation);
+function buildRelationSummary(relation: RelationRow, readContext: EvaluationReadContext) {
+  const context = buildQuestionContextFromReadContext(relation, readContext);
+  const gate = canEvaluateFromContext(relation, readContext);
   return {
     id: relation.id,
     batch_id: relation.batch_id,
@@ -243,6 +155,7 @@ router.get('/downward/:batchId', async (ctx: Context) => {
   const batch = await BatchModel.findById(batchId);
   if (!batch) return fail(ctx, '批次不存在', -1, 404);
   const relations = await RelationModel.findByBatchId(batchId, { evaluator_id: userId, eval_type: 'downward' });
+  const readContext = await loadEvaluationReadContext(relations);
   const staffRelations = relations.filter(r => r.evaluator_level === 'manager' && r.target_level === 'staff');
   const quotaByDepartment: Record<string, unknown> = {};
   for (const relation of staffRelations) {
@@ -253,7 +166,7 @@ router.get('/downward/:batchId', async (ctx: Context) => {
     batch,
     quota: Object.keys(quotaByDepartment).length === 1 ? Object.values(quotaByDepartment)[0] : null,
     quota_by_department: quotaByDepartment,
-    list: await Promise.all(relations.map(buildRelationSummary)),
+    list: relations.map(relation => buildRelationSummary(relation, readContext)),
   });
 });
 
@@ -263,16 +176,20 @@ router.get('/relation/:relationId', async (ctx: Context) => {
   const relation = await RelationModel.findById(relationId);
   if (!relation) return fail(ctx, '评价关系不存在', -1, 404);
   if (relation.evaluator_id !== userId) return fail(ctx, '无权查看此评价', -1, 403);
-  const answers = await AnswerModel.findByRelationId(relationId);
-  const context = await buildQuestionContext(relation);
-  const gate = await canEvaluate(relation);
+  const [answers, readContext, gradePolicy, personalSummary] = await Promise.all([
+    AnswerModel.findByRelationId(relationId),
+    loadEvaluationReadContext([relation]),
+    getGradePolicyForRelation(relation),
+    relation.eval_type === 'self'
+      ? Promise.resolve(undefined)
+      : PersonalSummaryModel.findMetadata(relation.batch_id, relation.target_id),
+  ]);
+  const context = buildQuestionContextFromReadContext(relation, readContext);
+  const gate = canEvaluateFromContext(relation, readContext);
   const mode = isLeaderTotalRelation(relation) ? 'leader_totals' : 'detail';
   const performanceTotal = answers.find(a => a.question_seq === LEADER_PERFORMANCE_SEQ)?.score ?? null;
   const comprehensiveTotal = answers.find(a => a.question_seq === LEADER_COMPREHENSIVE_SEQ)?.score
     ?? (isLeaderTotalRelation(relation) && performanceTotal === null ? totalOfAnswers(answers) : null);
-  const personalSummary = relation.eval_type === 'self'
-    ? null
-    : await PersonalSummaryModel.findMetadata(relation.batch_id, relation.target_id);
   success(ctx, {
     relation,
     answers,
@@ -286,7 +203,7 @@ router.get('/relation/:relationId', async (ctx: Context) => {
     mode,
     leader_performance_score: performanceTotal,
     leader_comprehensive_score: comprehensiveTotal,
-    grade_policy: await getGradePolicyForRelation(relation),
+    grade_policy: gradePolicy,
     personal_summary: personalSummary ? {
       original_name: personalSummary.original_name,
       file_size: personalSummary.file_size,
@@ -550,12 +467,7 @@ router.get('/admin/progress/:batchId', auth, async (ctx: Context) => {
     RelationModel.findByBatchId(batchId, { eval_type: 'downward' }),
   ]);
   const allIds = [...selfRels, ...peerRels, ...downwardRels].map(r => r.id);
-  const allAnswers = await AnswerModel.findByRelationIds(allIds);
-  const answersMap: Record<number, AnswerRow[]> = {};
-  for (const a of allAnswers) {
-    if (!answersMap[a.relation_id]) answersMap[a.relation_id] = [];
-    answersMap[a.relation_id].push(a);
-  }
+  const totalsByRelation = await AnswerModel.findTotalsByRelationIds(allIds);
   const buildList = (rows: RelationRow[]) => rows.map(r => ({
     id: r.id,
     evaluator_id: r.evaluator_id,
@@ -567,7 +479,7 @@ router.get('/admin/progress/:batchId', auth, async (ctx: Context) => {
     target_department: r.target_department,
     target_level: r.target_level,
     status: r.status,
-    totalScore: totalOfAnswers(answersMap[r.id] || []),
+    totalScore: totalsByRelation.get(r.id) ?? null,
   }));
   const stat = (rows: RelationRow[]) => ({
     total: rows.length,

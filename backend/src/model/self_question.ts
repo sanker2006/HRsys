@@ -241,6 +241,20 @@ export const SelfQuestionModel = {
     );
   },
 
+  findByBatchAndUsers(batchId: number, userIds: number[]): Promise<SelfQuestionRow[]> {
+    const ids = [...new Set(userIds)].filter(Number.isFinite);
+    if (ids.length === 0) return Promise.resolve([]);
+    const marks = ids.map(() => '?').join(',');
+    return queryAll<SelfQuestionRow>(
+      `SELECT sq.*, u.name as user_name, u.employee_no, u.level as user_level
+       FROM self_question sq
+       JOIN app_user u ON sq.user_id = u.id
+       WHERE sq.batch_id = ? AND sq.user_id IN (${marks})
+       ORDER BY u.employee_no`,
+      [batchId, ...ids]
+    );
+  },
+
   toExportFormat(rows: SelfQuestionRow[]): SelfQuestionExport[] {
     return rows.map(row => {
       const performance = collectQuestions(row, 'performance');

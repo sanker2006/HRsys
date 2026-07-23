@@ -90,6 +90,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { h5Api } from '../api'
 import GradePolicyPanel from '../components/GradePolicyPanel.vue'
+import { preloadEvaluationView, preloadWhenIdle } from '../router/loaders'
 
 const props = defineProps<{ batchId: string; type: string }>()
 const router = useRouter()
@@ -179,9 +180,11 @@ function openPerson(item: any) {
       showToast(item.blocked_reason || '当前对象暂不可评价')
       return
     }
+    void preloadEvaluationView('downward-detail')
     router.push(`/downward-eval/${props.batchId}/${item.id}`)
     return
   }
+  void preloadEvaluationView('peer-detail')
   router.push(`/peer-eval/${props.batchId}/${item.id}`)
 }
 
@@ -216,6 +219,7 @@ onMounted(async () => {
   showLoadingToast({ message: '加载中...', forbidClick: true })
   try {
     await loadData()
+    preloadWhenIdle(props.type === 'downward' ? 'downward-detail' : 'peer-detail')
   } finally {
     closeToast()
   }

@@ -96,6 +96,7 @@ import { useRouter } from 'vue-router'
 import { h5Api } from '../api'
 import PersonalSummaryDownload from '../components/PersonalSummaryDownload.vue'
 import GradePolicyPanel from '../components/GradePolicyPanel.vue'
+import { reportClientPerformance } from '../utils/performance'
 
 const props = defineProps<{ batchId: string; relationId: string }>()
 const router = useRouter()
@@ -119,6 +120,7 @@ const submitting = ref(false)
 const nexting = ref(false)
 const revoking = ref(false)
 const savedSnapshot = ref('')
+let overviewPromise: Promise<void> | null = null
 
 const targetName = computed(() => relation.value?.target_name || '向下评价')
 const isCompleted = computed(() => relation.value?.status === 'completed')
@@ -171,6 +173,16 @@ async function loadOverview() {
   list.value = res.data?.list || []
 }
 
+async function ensureOverview(force = false) {
+  if (!force && list.value.length > 0) return
+  if (overviewPromise) {
+    if (!force) return overviewPromise
+    try { await overviewPromise } catch {}
+  }
+  overviewPromise = loadOverview().finally(() => { overviewPromise = null })
+  return overviewPromise
+}
+
 async function loadDetail() {
   const res: any = await h5Api.getRelationDetail(Number(props.relationId))
   const data = res.data || {}
@@ -216,8 +228,7 @@ async function submit(draft: boolean) {
     }
     closeToast()
     showToast(draft ? '草稿已保存' : '提交成功')
-    await loadOverview()
-    await loadDetail()
+    await Promise.all([ensureOverview(true), loadDetail()])
   } finally {
     drafting.value = false
     submitting.value = false
@@ -232,7 +243,7 @@ async function revokeScore() {
   try {
     await h5Api.revoke(Number(props.relationId))
     showToast('已撤销，评分已退回草稿')
-    await Promise.all([loadOverview(), loadDetail()])
+    await Promise.all([ensureOverview(true), loadDetail()])
   } finally { revoking.value = false }
 }
 
@@ -250,7 +261,7 @@ async function goNext() {
   }
   nexting.value = true
   try {
-    if (list.value.length === 0) await loadOverview()
+    if (list.value.length === 0) await ensureOverview()
     const current = Number(props.relationId)
     const start = list.value.findIndex(item => item.id === current)
     const sameDepartment = relation.value?.target_department
@@ -270,9 +281,16 @@ async function goNext() {
 }
 
 async function loadPage() {
+  const startedAt = performance.now()
   showLoadingToast({ message: '加载中...', forbidClick: true })
+  void ensureOverview().catch(() => {})
   try {
-    await Promise.all([loadOverview(), loadDetail()])
+    await loadDetail()
+    reportClientPerformance({
+      kind: 'view',
+      name: '/downward-eval/detail-ready',
+      duration_ms: performance.now() - startedAt,
+    })
   } finally {
     closeToast()
   }

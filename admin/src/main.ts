@@ -1,12 +1,93 @@
 import { createApp } from 'vue'
-import ElementPlus from 'element-plus'
+import {
+  ElAlert,
+  ElAside,
+  ElButton,
+  ElCard,
+  ElCheckbox,
+  ElConfigProvider,
+  ElContainer,
+  ElDatePicker,
+  ElDialog,
+  ElDropdown,
+  ElDropdownItem,
+  ElDropdownMenu,
+  ElEmpty,
+  ElForm,
+  ElFormItem,
+  ElHeader,
+  ElIcon,
+  ElInput,
+  ElInputNumber,
+  ElLoading,
+  ElMain,
+  ElMenu,
+  ElMenuItem,
+  ElOption,
+  ElPagination,
+  ElProgress,
+  ElRadio,
+  ElRadioButton,
+  ElRadioGroup,
+  ElSegmented,
+  ElSelect,
+  ElSwitch,
+  ElTable,
+  ElTableColumn,
+  ElTabPane,
+  ElTabs,
+  ElTag,
+  ElTooltip,
+  ElUpload,
+} from 'element-plus'
 import 'element-plus/dist/index.css'
-import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import router from './router'
 import App from './App.vue'
 import './style.css'
 
 const app = createApp(App)
-app.use(ElementPlus, { locale: zhCn })
+for (const plugin of [
+  ElAlert,
+  ElAside,
+  ElButton,
+  ElCard,
+  ElCheckbox,
+  ElConfigProvider,
+  ElContainer,
+  ElDatePicker,
+  ElDialog,
+  ElDropdown,
+  ElDropdownItem,
+  ElDropdownMenu,
+  ElEmpty,
+  ElForm,
+  ElFormItem,
+  ElHeader,
+  ElIcon,
+  ElInput,
+  ElInputNumber,
+  ElLoading,
+  ElMain,
+  ElMenu,
+  ElMenuItem,
+  ElOption,
+  ElPagination,
+  ElProgress,
+  ElRadio,
+  ElRadioButton,
+  ElRadioGroup,
+  ElSegmented,
+  ElSelect,
+  ElSwitch,
+  ElTable,
+  ElTableColumn,
+  ElTabPane,
+  ElTabs,
+  ElTag,
+  ElTooltip,
+  ElUpload,
+]) {
+  app.use(plugin)
+}
 app.use(router)
 app.mount('#app')

@@ -1,4 +1,12 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { reportClientPerformance } from '../utils/performance'
+import {
+  loadBatchEvalView,
+  loadDownwardEvalView,
+  loadEvalFormView,
+  loadEvaluateView,
+  loadPeerEvalView,
+} from './loaders'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -40,37 +48,40 @@ const router = createRouter({
     {
       path: '/evaluate/:batchId',
       name: 'Evaluate',
-      component: () => import('../views/Evaluate.vue'),
+      component: loadEvaluateView,
       props: true,
     },
     {
       path: '/eval-form/:relationId',
       name: 'EvalForm',
-      component: () => import('../views/EvalForm.vue'),
+      component: loadEvalFormView,
       props: true,
     },
     {
       path: '/downward-eval/:batchId/:relationId',
       name: 'DownwardEval',
-      component: () => import('../views/DownwardEval.vue'),
+      component: loadDownwardEvalView,
       props: true,
     },
     {
       path: '/peer-eval/:batchId/:relationId',
       name: 'PeerEval',
-      component: () => import('../views/PeerEval.vue'),
+      component: loadPeerEvalView,
       props: true,
     },
     {
       path: '/batch-eval/:batchId/:type',
       name: 'BatchEval',
-      component: () => import('../views/BatchEval.vue'),
+      component: loadBatchEvalView,
       props: true,
     },
   ],
 })
 
+let routeStartedAt = performance.now()
+
 router.beforeEach((to, _from, next) => {
+  routeStartedAt = performance.now()
   if (to.path.startsWith('/intern')) {
     const token = localStorage.getItem('intern_token')
     if (!token && to.path !== '/intern/login') {
@@ -92,6 +103,14 @@ router.beforeEach((to, _from, next) => {
   } else {
     next()
   }
+})
+
+router.afterEach(to => {
+  reportClientPerformance({
+    kind: 'route',
+    name: to.path,
+    duration_ms: performance.now() - routeStartedAt,
+  })
 })
 
 export default router
