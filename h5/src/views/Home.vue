@@ -129,6 +129,7 @@ function batchStatusText(batch: any) {
 
 function handleLogout() {
   localStorage.removeItem('h5_token')
+  localStorage.removeItem('h5_must_change_password')
   showToast('已退出')
   router.replace('/login')
 }

@@ -9,18 +9,45 @@ export interface GradeConstraint {
   max: number;
 }
 
+export interface GradeRange {
+  min: number;
+  max: number;
+  label: string;
+}
+
 export interface GradePolicyResult {
   scale: ScoreScale;
   group_size: number;
   completed: number;
   remaining: number;
   counts: Record<Grade, number>;
+  ranges: Record<Grade, GradeRange>;
+  remaining_capacity: Record<Grade, number>;
   constraints: GradeConstraint[];
   valid: boolean;
   message: string | null;
 }
 
 const EMPTY_COUNTS = (): Record<Grade, number> => ({ A: 0, B: 0, C: 0, D: 0, E: 0 });
+const GRADES: Grade[] = ['A', 'B', 'C', 'D', 'E'];
+
+export function gradeRanges(scale: ScoreScale): Record<Grade, GradeRange> {
+  return scale === 100
+    ? {
+      A: { min: 91, max: 100, label: '91.0～100.0' },
+      B: { min: 81, max: 90.9, label: '81.0～90.9' },
+      C: { min: 71, max: 80.9, label: '71.0～80.9' },
+      D: { min: 60, max: 70.9, label: '60.0～70.9' },
+      E: { min: 0, max: 59.9, label: '0～59.9' },
+    }
+    : {
+      A: { min: 27.1, max: 30, label: '27.1～30.0' },
+      B: { min: 24.1, max: 27, label: '24.1～27.0' },
+      C: { min: 21.1, max: 24, label: '21.1～24.0' },
+      D: { min: 18, max: 21, label: '18.0～21.0' },
+      E: { min: 0, max: 17.9, label: '0～17.9' },
+    };
+}
 
 export function classifyGrade(score: number, scale: ScoreScale): Grade {
   if (!Number.isFinite(score) || score < 0 || score > scale) {
@@ -61,25 +88,28 @@ export function buildGradeConstraints(groupSize: number): GradeConstraint[] {
   ];
 }
 
-export function evaluateGradePolicy(scores: number[], groupSize: number, scale: ScoreScale): GradePolicyResult {
-  if (scores.length > groupSize) throw new Error('已评分人数不能超过评价对象人数');
-  const counts = EMPTY_COUNTS();
-  for (const score of scores) counts[classifyGrade(score, scale)] += 1;
+function evaluateCounts(
+  counts: Record<Grade, number>,
+  completed: number,
+  groupSize: number,
+  scale: ScoreScale
+): Omit<GradePolicyResult, 'remaining_capacity'> {
   const constraints = buildGradeConstraints(groupSize);
-  const remaining = groupSize - scores.length;
+  const remaining = groupSize - completed;
+  const ranges = gradeRanges(scale);
 
   for (const constraint of constraints) {
     const current = constraint.grades.reduce((sum, grade) => sum + counts[grade], 0);
     if (current > constraint.max) {
       return {
-        scale, group_size: groupSize, completed: scores.length, remaining, counts, constraints,
+        scale, group_size: groupSize, completed, remaining, counts, constraints, ranges,
         valid: false,
         message: `${constraint.label}最多 ${constraint.max} 人，当前提交后为 ${current} 人`,
       };
     }
     if (current + remaining < constraint.min) {
       return {
-        scale, group_size: groupSize, completed: scores.length, remaining, counts, constraints,
+        scale, group_size: groupSize, completed, remaining, counts, constraints, ranges,
         valid: false,
         message: `${constraint.label}至少 ${constraint.min} 人，剩余 ${remaining} 人已无法满足要求`,
       };
@@ -92,13 +122,29 @@ export function evaluateGradePolicy(scores: number[], groupSize: number, scale: 
   }, 0);
   if (minimumDeficit > remaining) {
     return {
-      scale, group_size: groupSize, completed: scores.length, remaining, counts, constraints,
+      scale, group_size: groupSize, completed, remaining, counts, constraints, ranges,
       valid: false,
       message: `剩余 ${remaining} 人无法同时满足全部最低档位要求，至少还需要 ${minimumDeficit} 人`,
     };
   }
 
-  return { scale, group_size: groupSize, completed: scores.length, remaining, counts, constraints, valid: true, message: null };
+  return { scale, group_size: groupSize, completed, remaining, counts, constraints, ranges, valid: true, message: null };
+}
+
+export function evaluateGradePolicy(scores: number[], groupSize: number, scale: ScoreScale): GradePolicyResult {
+  if (scores.length > groupSize) throw new Error('已评分人数不能超过评价对象人数');
+  const counts = EMPTY_COUNTS();
+  for (const score of scores) counts[classifyGrade(score, scale)] += 1;
+  const base = evaluateCounts(counts, scores.length, groupSize, scale);
+  const remainingCapacity = EMPTY_COUNTS();
+  for (const grade of GRADES) {
+    for (let additional = 1; additional <= base.remaining; additional += 1) {
+      const projected = { ...counts, [grade]: counts[grade] + additional };
+      if (!evaluateCounts(projected, scores.length + additional, groupSize, scale).valid) break;
+      remainingCapacity[grade] = additional;
+    }
+  }
+  return { ...base, remaining_capacity: remainingCapacity };
 }
 
 export function gradePolicyDescription(groupSize: number): string {

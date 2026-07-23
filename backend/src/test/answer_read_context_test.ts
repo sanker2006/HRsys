@@ -55,6 +55,8 @@ const context: EvaluationReadContext = {
     [1, [{ relation_id: 1, question_seq: null, score: 85, is_total: 1 } as any]],
   ]),
   managerCompletion: new Map([[10, { total: 1, completed: 1 }]]),
+  peerCompletion: new Map(),
+  referenceRelationsByTarget: new Map([[20, [selfRelation, managerDownward]]]),
 };
 
 assert.deepEqual(canEvaluateFromContext(managerDownward, context), { ok: true });
@@ -77,8 +79,10 @@ assert.equal(
 
 const questionContext = buildQuestionContextFromReadContext(managerDownward, context);
 assert.equal(questionContext?.self_total, 90);
-assert.equal(questionContext?.manager_total, 85);
+assert.equal(questionContext?.manager_total, null);
 assert.equal(questionContext?.performance_questions[0].self_score, 60);
+assert.equal(questionContext?.references.length, 1);
+assert.equal(questionContext?.references[0].source_relation_id, selfRelation.id);
 
 async function assertFixedDependencyCalls(size: number) {
   const calls: string[] = [];
@@ -91,12 +95,26 @@ async function assertFixedDependencyCalls(size: number) {
     async findContextRelations() { calls.push('relations'); return []; },
     async findAnswers() { calls.push('answers'); return []; },
     async findManagerCompletion() { calls.push('completion'); return []; },
+    async findPeerCompletion() { calls.push('peer-completion'); return []; },
   };
   await loadEvaluationReadContext(relations, dependencies);
-  assert.deepEqual(calls.sort(), ['answers', 'completion', 'questions', 'relations']);
+  assert.deepEqual(calls.sort(), ['answers', 'completion', 'peer-completion', 'questions', 'relations']);
 }
 
 await assertFixedDependencyCalls(1);
 await assertFixedDependencyCalls(50);
+
+const draftReferenceContext = await loadEvaluationReadContext([relation({ id: 50 })], {
+  async findQuestions() { return []; },
+  async findContextRelations() { return [{ ...selfRelation, status: 'draft' }]; },
+  async findAnswers(relationIds) {
+    assert.deepEqual(relationIds, []);
+    return [];
+  },
+  async findManagerCompletion() { return []; },
+  async findPeerCompletion() { return []; },
+});
+assert.equal(draftReferenceContext.selfRelationByTarget.size, 0);
+assert.equal(draftReferenceContext.referenceRelationsByTarget.size, 0);
 
 console.log('answer read context tests passed');

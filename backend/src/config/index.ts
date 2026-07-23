@@ -18,4 +18,8 @@ export const config = {
     .map(origin => origin.trim())
     .filter(Boolean),
   slowRequestMs: Math.max(100, Number(process.env.SLOW_REQUEST_MS || '500')),
+  trustProxy: process.env.TRUST_PROXY === 'true',
+  requireHttpsForH5Password: process.env.REQUIRE_HTTPS_FOR_H5_PASSWORD
+    ? process.env.REQUIRE_HTTPS_FOR_H5_PASSWORD === 'true'
+    : isProduction,
 };

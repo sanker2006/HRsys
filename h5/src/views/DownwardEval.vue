@@ -1,21 +1,22 @@
 <template>
-  <div class="page" :class="{ 'has-quota': quota && !isLeaderRelation }">
-    <van-nav-bar :title="targetName" left-arrow @click-left="router.back()" class="nav" />
-
-    <section v-if="relation" class="score-dock">
-      <div class="dock-person">
-        <div class="dock-kicker">向下评价</div>
-        <div class="dock-title">{{ targetName }}</div>
-        <div class="dock-meta">{{ relation.target_department }} · {{ relation.target_position || roleText(relation.target_level) }}</div>
-      </div>
-      <div class="dock-score-grid">
-        <div v-for="item in dockScores" :key="item.label" class="dock-score">
-          <span>{{ item.label }}</span>
-          <b>{{ formatPlainScore(item.value) }}</b>
+  <div class="page">
+    <EvaluationStickyHeader :title="targetName" @back="router.back()">
+      <section v-if="relation" class="score-dock">
+        <div class="dock-person">
+          <div class="dock-kicker">向下评价</div>
+          <div class="dock-title">{{ targetName }}</div>
+          <div class="dock-meta">{{ relation.target_department }} · {{ relation.target_position || roleText(relation.target_level) }}</div>
         </div>
-      </div>
-    </section>
+        <div class="dock-score-grid">
+          <div v-for="item in dockScores" :key="item.label" class="dock-score">
+            <span>{{ item.label }}</span>
+            <b>{{ formatPlainScore(item.value) }}</b>
+          </div>
+        </div>
+      </section>
+    </EvaluationStickyHeader>
 
+    <EvaluationReferences :references="references" />
     <PersonalSummaryDownload :relation-id="props.relationId" :summary="personalSummary" />
     <GradePolicyPanel v-if="!isLeaderRelation" :policy="quota" />
 
@@ -49,8 +50,9 @@
         </div>
         <div class="meta-line">
           <span>满分 {{ formatNumber(q.weight) }} 分</span>
-          <span v-if="q.self_score !== null && q.self_score !== undefined">{{ selfScoreLabel }} {{ formatNumber(q.self_score) }} 分</span>
-          <span v-if="q.manager_score !== null && q.manager_score !== undefined">主管评分 {{ formatNumber(q.manager_score) }} 分</span>
+          <span v-for="item in referenceScores(q.answer_seq)" :key="`${item.source_relation_id}-${q.answer_seq}`">
+            {{ item.label }} {{ formatNumber(item.score) }} 分
+          </span>
         </div>
         <van-slider v-if="!isLeaderTotals" v-model="answers[q.answer_seq]" :min="0" :max="q.weight" :step="0.1" :disabled="isReadonly" />
       </article>
@@ -65,8 +67,9 @@
         </div>
         <div class="meta-line">
           <span>满分 {{ formatNumber(q.weight) }} 分</span>
-          <span v-if="q.self_score !== null && q.self_score !== undefined">{{ selfScoreLabel }} {{ formatNumber(q.self_score) }} 分</span>
-          <span v-if="q.manager_score !== null && q.manager_score !== undefined">主管评分 {{ formatNumber(q.manager_score) }} 分</span>
+          <span v-for="item in referenceScores(q.answer_seq)" :key="`${item.source_relation_id}-${q.answer_seq}`">
+            {{ item.label }} {{ formatNumber(item.score) }} 分
+          </span>
         </div>
         <van-slider v-if="!isLeaderTotals" v-model="answers[q.answer_seq]" :min="0" :max="q.weight" :step="0.1" :disabled="isReadonly" />
       </article>
@@ -90,13 +93,16 @@
 </template>
 
 <script setup lang="ts">
-import { closeToast, showConfirmDialog, showLoadingToast, showToast } from 'vant'
+import { closeToast, showConfirmDialog, showDialog, showLoadingToast, showToast } from 'vant'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { h5Api } from '../api'
 import PersonalSummaryDownload from '../components/PersonalSummaryDownload.vue'
 import GradePolicyPanel from '../components/GradePolicyPanel.vue'
 import { reportClientPerformance } from '../utils/performance'
+import EvaluationStickyHeader from '../components/EvaluationStickyHeader.vue'
+import { gradeBlockedMessage, gradeConfirmMessage } from '../utils/gradePreview'
+import EvaluationReferences from '../components/EvaluationReferences.vue'
 
 const props = defineProps<{ batchId: string; relationId: string }>()
 const router = useRouter()
@@ -113,8 +119,7 @@ const totalScore = ref(0)
 const leaderPerformance = ref(0)
 const leaderComprehensive = ref(0)
 const blockedReason = ref('')
-const selfTotal = ref<number | null>(null)
-const managerTotal = ref<number | null>(null)
+const references = ref<any[]>([])
 const drafting = ref(false)
 const submitting = ref(false)
 const nexting = ref(false)
@@ -130,15 +135,9 @@ const isReadonly = computed(() => isCompleted.value || !!blockedReason.value)
 const detailTotal = computed(() => Number(Object.values(answers).reduce((sum, value) => sum + Number(value || 0), 0).toFixed(1)))
 const displayTotal = computed(() => Number((isLeaderTotals.value ? leaderPerformance.value + leaderComprehensive.value : detailTotal.value).toFixed(1)))
 const hasDirty = computed(() => snapshotAnswers() !== savedSnapshot.value)
-const selfScoreLabel = computed(() => relation.value?.target_level === 'manager' ? '负责人自评' : '员工自评')
 const currentScoreLabel = computed(() => isLeaderRelation.value ? '领导评分' : '主管评分')
 const dockScores = computed(() => {
-  const rows = [{ label: selfScoreLabel.value, value: selfTotal.value }]
-  if (relation.value?.target_level === 'staff' && managerTotal.value !== null) {
-    rows.push({ label: '主管评分', value: managerTotal.value })
-  }
-  rows.push({ label: currentScoreLabel.value, value: displayTotal.value })
-  return rows
+  return [{ label: currentScoreLabel.value, value: displayTotal.value }]
 })
 
 function roleText(role: string) {
@@ -168,6 +167,16 @@ function collectAnswers() {
   }))
 }
 
+function referenceScores(questionSeq: number) {
+  return references.value
+    .filter(item => item.type !== 'peer')
+    .map(item => ({
+      ...item,
+      score: item.scores?.find((score: any) => score.question_seq === questionSeq)?.score,
+    }))
+    .filter(item => item.score !== undefined && item.score !== null)
+}
+
 async function loadOverview() {
   const res: any = await h5Api.getDownwardOverview(Number(props.batchId))
   list.value = res.data?.list || []
@@ -190,8 +199,7 @@ async function loadDetail() {
   personalSummary.value = data.personal_summary || null
   mode.value = data.mode || 'detail'
   blockedReason.value = data.can_submit === false ? data.blocked_reason || '当前暂不能提交' : ''
-  selfTotal.value = data.self_total ?? null
-  managerTotal.value = data.manager_total ?? null
+  references.value = data.references || []
   quota.value = data.grade_policy || null
   leaderPerformance.value = Number(data.leader_performance_score || 0)
   leaderComprehensive.value = Number(data.leader_comprehensive_score || 0)
@@ -220,6 +228,39 @@ async function submit(draft: boolean) {
   if (draft) drafting.value = true
   else submitting.value = true
   try {
+    if (!draft && !isLeaderRelation.value) {
+      const previewRes: any = await h5Api.previewSubmit(Number(props.relationId), collectAnswers())
+      const preview = previewRes.data
+      if (!preview.can_submit) {
+        await showDialog({
+          title: '当前评分不能提交',
+          message: gradeBlockedMessage(preview),
+          confirmButtonText: '知道了',
+        })
+        return
+      }
+      try {
+        await showConfirmDialog({
+          title: '确认正式提交',
+          message: gradeConfirmMessage(preview),
+          confirmButtonText: '确认提交',
+          cancelButtonText: '返回检查',
+        })
+      } catch {
+        return
+      }
+    } else if (!draft) {
+      try {
+        await showConfirmDialog({
+          title: '确认正式提交',
+          message: `本次评分合计 ${displayTotal.value.toFixed(1)} 分，正式提交后不能直接修改，请认真确认。`,
+          confirmButtonText: '确认提交',
+          cancelButtonText: '返回检查',
+        })
+      } catch {
+        return
+      }
+    }
     showLoadingToast({ message: draft ? '保存中...' : '提交中...', forbidClick: true })
     if (isLeaderTotals.value) {
       await h5Api.submitLeaderTotals({ relation_id: Number(props.relationId), performance_score: leaderPerformance.value, comprehensive_score: leaderComprehensive.value, draft })
@@ -229,6 +270,16 @@ async function submit(draft: boolean) {
     closeToast()
     showToast(draft ? '草稿已保存' : '提交成功')
     await Promise.all([ensureOverview(true), loadDetail()])
+  } catch (error: any) {
+    if (!draft && !isLeaderRelation.value && error?.response?.status === 409) {
+      try {
+        const latest: any = await h5Api.previewSubmit(Number(props.relationId), collectAnswers())
+        await showDialog({
+          title: '档位状态已更新',
+          message: `${latest.data.reason || '其他评价已先提交，请按最新档位重新确认。'}\n当前评分属于${latest.data.grade}级。`,
+        })
+      } catch {}
+    }
   } finally {
     drafting.value = false
     submitting.value = false
@@ -306,25 +357,9 @@ watch(() => props.relationId, loadPage)
   background:
     radial-gradient(circle at 100% 12%, rgba(3, 100, 134, .10), transparent 34%),
     var(--hr-bg);
-  padding-top: 210px;
   padding-bottom: calc(108px + env(safe-area-inset-bottom, 0px));
 }
-.page.has-quota { padding-top: 210px; }
-.nav {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 60;
-  height: 46px;
-  background: #f6f9fc;
-}
 .score-dock {
-  position: fixed;
-  top: 46px;
-  left: 0;
-  right: 0;
-  z-index: 55;
   display: flex;
   align-items: center;
   justify-content: space-between;

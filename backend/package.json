@@ -22,6 +22,13 @@
     "test:score-grade-policy": "tsx src/test/score_grade_policy_test.ts",
     "test:leader-score-template": "tsx src/test/leader_score_template_test.ts",
     "test:answer-read-context": "tsx src/test/answer_read_context_test.ts",
+    "test:evaluation-dependencies": "tsx src/test/evaluation_dependencies_test.ts",
+    "test:h5-auth-contract": "tsx src/test/h5_auth_contract_test.ts",
+    "test:h5-auth-integration": "tsx src/test/h5_auth_integration_test.ts",
+    "test:h5-auth-migration-integration": "tsx src/test/h5_auth_migration_integration_test.ts",
+    "test:graded-submission-mysql": "tsx src/test/graded_submission_mysql_integration_test.ts",
+    "auth:preflight": "tsx src/tools/migrate-h5-password-auth.ts",
+    "auth:apply": "tsx src/tools/migrate-h5-password-auth.ts --apply",
     "abcde:preflight": "tsx src/tools/migrate-abcde-policy.ts",
     "abcde:apply": "tsx src/tools/migrate-abcde-policy.ts --apply"
   },

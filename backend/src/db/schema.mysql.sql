@@ -16,11 +16,22 @@ CREATE TABLE IF NOT EXISTS app_user (
     phone        VARCHAR(32)  NOT NULL,
     id_card_tail VARCHAR(16)  NOT NULL,
     password     VARCHAR(255) NOT NULL,
+    must_change_password TINYINT NOT NULL DEFAULT 1,
+    password_version INT NOT NULL DEFAULT 1,
     status       VARCHAR(32)  NOT NULL DEFAULT 'active',
     is_admin     TINYINT     NOT NULL DEFAULT 0,
     created_at   DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at   DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY idx_user_phone_idcard (phone, id_card_tail)
+    UNIQUE KEY idx_user_phone_unique (phone)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS h5_login_guard (
+    guard_key       CHAR(64) PRIMARY KEY,
+    failure_count   INT NOT NULL DEFAULT 0,
+    window_started  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    locked_until    DATETIME NULL,
+    updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_h5_login_guard_updated (updated_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS division_leader_department (

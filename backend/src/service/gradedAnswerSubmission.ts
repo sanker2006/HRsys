@@ -1,7 +1,15 @@
 import { transaction, type DbExecutor } from '../db/query.js';
 import { AnswerModel } from '../model/answer.js';
 import type { RelationRow } from '../model/relation.js';
-import { evaluateGradePolicy, gradePolicyDescription, type GradePolicyResult, type ScoreScale } from './scoreGradePolicy.js';
+import {
+  classifyGrade,
+  evaluateGradePolicy,
+  gradePolicyDescription,
+  type Grade,
+  type GradePolicyResult,
+  type ScoreScale,
+} from './scoreGradePolicy.js';
+import { lockAndValidateEvaluationDependencies } from './evaluationDependencies.js';
 
 export interface DetailedSubmission {
   relation: RelationRow;
@@ -79,7 +87,8 @@ async function validateGroup(
     const totalRows = await tx.queryAll<{ relation_id: number; score: number }>(
       `SELECT relation_id, score
        FROM answer
-       WHERE is_total = 1 AND relation_id IN (${placeholders})`,
+       WHERE is_total = 1 AND relation_id IN (${placeholders})
+       ORDER BY relation_id${forUpdate ? ' FOR UPDATE' : ''}`,
       completedIds
     );
     for (const row of totalRows) totals.set(row.relation_id, Number(row.score));
@@ -111,22 +120,27 @@ export async function submitDetailedItems(items: DetailedSubmission[]): Promise<
       );
     }
 
+    const groupRelationIds: number[] = [];
     for (const group of [...groups.values()].sort((a, b) => a.policy.key.localeCompare(b.policy.key))) {
-      const result = await validateGroup(tx, group.policy, group.incoming);
+      groupRelationIds.push(...(await groupRelations(tx, group.policy, false)).map(row => row.id));
+    }
+    const formalRelations = items.filter(item => !item.draft).map(item => item.relation);
+    const allLockIds = [...new Set([...items.map(item => item.relation.id), ...groupRelationIds])].sort((a, b) => a - b);
+    if (formalRelations.length > 0) {
+      await lockAndValidateEvaluationDependencies(tx, formalRelations, allLockIds);
+    } else if (allLockIds.length > 0) {
+      const marks = allLockIds.map(() => '?').join(',');
+      await tx.queryAll(`SELECT id FROM relation WHERE id IN (${marks}) ORDER BY id FOR UPDATE`, allLockIds);
+    }
+
+    for (const group of [...groups.values()].sort((a, b) => a.policy.key.localeCompare(b.policy.key))) {
+      const result = await validateGroup(tx, group.policy, group.incoming, true);
       if (!result.valid) {
         throw Object.assign(
           new Error(`${result.message}。本组规则：${gradePolicyDescription(result.group_size)}`),
           { status: 409, detail: result }
         );
       }
-    }
-
-    const policyRelationIds = new Set([...groups.values()].flatMap(group => [...group.incoming.keys()]));
-    const relationIds = [...new Set(items.map(item => item.relation.id))]
-      .filter(id => !policyRelationIds.has(id))
-      .sort((a, b) => a - b);
-    for (const relationId of relationIds) {
-      await tx.queryOne('SELECT id FROM relation WHERE id = ? FOR UPDATE', [relationId]);
     }
 
     for (const item of items) {
@@ -145,4 +159,15 @@ export async function getGradePolicyForRelation(relation: RelationRow): Promise<
   const policy = policyGroupFor(relation);
   if (!policy) return null;
   return transaction(tx => validateGroup(tx, policy, new Map(), false));
+}
+
+export async function previewDetailedGradeSubmission(
+  relation: RelationRow,
+  answers: Array<{ seq: number; score: number }>
+): Promise<{ total: number; grade: Grade; policy: GradePolicyResult } | null> {
+  const policy = policyGroupFor(relation);
+  if (!policy) return null;
+  const total = Math.round(answers.reduce((sum, answer) => sum + Number(answer.score || 0), 0) * 10) / 10;
+  const result = await transaction(tx => validateGroup(tx, policy, new Map([[relation.id, total]]), false));
+  return { total, grade: classifyGrade(total, policy.scale), policy: result };
 }

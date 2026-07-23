@@ -1,8 +1,14 @@
 import api from './request'
 
 export const h5Api = {
-  login(phone: string, idCardTail: string) {
-    return api.post('/auth/h5-login', { phone, idCardTail })
+  login(phone: string, password: string) {
+    return api.post('/auth/h5-login', { phone, password })
+  },
+  changePassword(newPassword: string, confirmPassword: string) {
+    return api.post('/auth/change-password', {
+      new_password: newPassword,
+      confirm_password: confirmPassword,
+    })
   },
   me() {
     return api.get('/auth/me')
@@ -18,6 +24,9 @@ export const h5Api = {
   },
   getRelationDetail(relationId: number) {
     return api.get(`/answer/relation/${relationId}`)
+  },
+  previewSubmit(relationId: number, answers: Array<{ seq: number; score: number }>) {
+    return api.post(`/answer/relation/${relationId}/submit-preview`, { answers })
   },
   downloadPersonalSummary(relationId: number) {
     return api.get(`/personal-summary/relation/${relationId}/download`, {

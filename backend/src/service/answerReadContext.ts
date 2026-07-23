@@ -13,6 +13,17 @@ export interface EvaluationQuestionContext extends SelfQuestionExport {
   questions: Array<QuestionItem & { self_score: number | null; manager_score: number | null }>;
   self_total: number | null;
   manager_total: number | null;
+  references: EvaluationReference[];
+}
+
+export interface EvaluationReference {
+  type: 'self' | 'manager' | 'peer';
+  source_relation_id: number;
+  source_role: string;
+  status: 'completed';
+  label: string;
+  total: number | null;
+  scores: Array<{ question_seq: number; score: number }>;
 }
 
 export interface EvaluationReadContext {
@@ -21,6 +32,8 @@ export interface EvaluationReadContext {
   managerRelationByTarget: Map<number, RelationRow>;
   answersByRelation: Map<number, AnswerRow[]>;
   managerCompletion: Map<number, { total: number; completed: number }>;
+  peerCompletion: Map<number, { total: number; completed: number }>;
+  referenceRelationsByTarget: Map<number, RelationRow[]>;
 }
 
 export interface EvaluationReadDependencies {
@@ -31,6 +44,10 @@ export interface EvaluationReadDependencies {
     batchId: number,
     managerIds: number[]
   ): Promise<Array<{ manager_id: number; total: number; completed: number }>>;
+  findPeerCompletion(
+    batchId: number,
+    targetIds: number[]
+  ): Promise<Array<{ target_id: number; total: number; completed: number }>>;
 }
 
 const defaultDependencies: EvaluationReadDependencies = {
@@ -38,6 +55,7 @@ const defaultDependencies: EvaluationReadDependencies = {
   findContextRelations: (batchId, targetIds) => RelationModel.findEvaluationContextRelations(batchId, targetIds),
   findAnswers: relationIds => AnswerModel.findByRelationIds(relationIds),
   findManagerCompletion: (batchId, managerIds) => RelationModel.findManagerStaffCompletion(batchId, managerIds),
+  findPeerCompletion: (batchId, targetIds) => RelationModel.findIncomingPeerCompletion(batchId, targetIds),
 };
 
 function totalOfAnswers(answers: AnswerRow[]): number | null {
@@ -55,6 +73,8 @@ export async function loadEvaluationReadContext(
       managerRelationByTarget: new Map(),
       answersByRelation: new Map(),
       managerCompletion: new Map(),
+      peerCompletion: new Map(),
+      referenceRelationsByTarget: new Map(),
     };
   }
 
@@ -68,10 +88,14 @@ export async function loadEvaluationReadContext(
     dependencies.findQuestions(batchId, targetIds),
     dependencies.findContextRelations(batchId, targetIds),
   ]);
+  const completedContextRelations = contextRelations.filter(relation => relation.status === 'completed');
 
   const selfRelationByTarget = new Map<number, RelationRow>();
   const managerRelationByTarget = new Map<number, RelationRow>();
-  for (const relation of contextRelations) {
+  const referenceRelationsByTarget = new Map<number, RelationRow[]>();
+  for (const relation of completedContextRelations) {
+    if (!referenceRelationsByTarget.has(relation.target_id)) referenceRelationsByTarget.set(relation.target_id, []);
+    referenceRelationsByTarget.get(relation.target_id)!.push(relation);
     if (relation.eval_type === 'self' && relation.evaluator_id === relation.target_id) {
       selfRelationByTarget.set(relation.target_id, relation);
     } else if (
@@ -95,13 +119,11 @@ export async function loadEvaluationReadContext(
     if (managerRelation) managerIds.add(managerRelation.evaluator_id);
   }
 
-  const answerRelationIds = [
-    ...selfRelationByTarget.values(),
-    ...managerRelationByTarget.values(),
-  ].map(relation => relation.id);
-  const [answers, completionRows] = await Promise.all([
+  const answerRelationIds = completedContextRelations.map(relation => relation.id);
+  const [answers, completionRows, peerCompletionRows] = await Promise.all([
     dependencies.findAnswers(answerRelationIds),
     dependencies.findManagerCompletion(batchId, [...managerIds]),
+    dependencies.findPeerCompletion(batchId, targetIds),
   ]);
 
   const answersByRelation = new Map<number, AnswerRow[]>();
@@ -119,7 +141,16 @@ export async function loadEvaluationReadContext(
       row.manager_id,
       { total: Number(row.total), completed: Number(row.completed) },
     ])),
+    peerCompletion: new Map(peerCompletionRows.map(row => [
+      row.target_id,
+      { total: Number(row.total), completed: Number(row.completed) },
+    ])),
+    referenceRelationsByTarget,
   };
+}
+
+function completionSatisfied(value: { total: number; completed: number } | undefined): boolean {
+  return !value || value.total === 0 || value.total === value.completed;
 }
 
 export function canEvaluateFromContext(
@@ -130,9 +161,13 @@ export function canEvaluateFromContext(
 
   if (relation.evaluator_level === 'manager' && relation.target_level === 'staff') {
     const selfRelation = context.selfRelationByTarget.get(relation.target_id);
-    return selfRelation?.status === 'completed'
-      ? { ok: true }
-      : { ok: false, reason: '员工正式提交自评后，部门负责人才能评价' };
+    if (selfRelation?.status !== 'completed') {
+      return { ok: false, reason: '员工正式提交自评后，部门负责人才能评价' };
+    }
+    if (!completionSatisfied(context.peerCompletion?.get(relation.target_id))) {
+      return { ok: false, reason: '该员工收到的全部员工互评完成后，部门负责人才能评价' };
+    }
+    return { ok: true };
   }
 
   if (relation.evaluator_level === 'division_leader' || relation.evaluator_level === 'main_leader') {
@@ -141,20 +176,30 @@ export function canEvaluateFromContext(
       if (selfRelation?.status !== 'completed') {
         return { ok: false, reason: '部门负责人正式提交自评后，领导才能评价' };
       }
+      if (!completionSatisfied(context.peerCompletion?.get(relation.target_id))) {
+        return { ok: false, reason: '该负责人收到的全部负责人互评完成后，领导才能评价' };
+      }
       const completion = context.managerCompletion.get(relation.target_id);
-      if (!completion || completion.total === 0 || completion.completed !== completion.total) {
+      if (!completionSatisfied(completion)) {
         return { ok: false, reason: '部门负责人完成所负责部门的所有员工评分后，领导才能评价' };
       }
       return { ok: true };
     }
 
     if (relation.target_level === 'staff') {
+      const selfRelation = context.selfRelationByTarget.get(relation.target_id);
+      if (selfRelation?.status !== 'completed') {
+        return { ok: false, reason: '该员工尚未完成自评' };
+      }
+      if (!completionSatisfied(context.peerCompletion?.get(relation.target_id))) {
+        return { ok: false, reason: '该员工收到的全部员工互评尚未完成' };
+      }
       const managerRelation = context.managerRelationByTarget.get(relation.target_id);
       if (managerRelation?.status !== 'completed') {
         return { ok: false, reason: '部门负责人完成该员工评分后，领导才能评价' };
       }
       const completion = context.managerCompletion.get(managerRelation.evaluator_id);
-      if (!completion || completion.total === 0 || completion.completed !== completion.total) {
+      if (!completionSatisfied(completion)) {
         return { ok: false, reason: '部门负责人完成所负责部门的所有员工评分后，领导才能评价该部门人员' };
       }
       return { ok: true };
@@ -175,8 +220,10 @@ export function buildQuestionContextFromReadContext(
   const managerRelation = relation.target_level === 'staff'
     ? context.managerRelationByTarget.get(relation.target_id)
     : undefined;
-  const selfScores = selfRelation ? context.answersByRelation.get(selfRelation.id) || [] : [];
-  const managerScores = managerRelation ? context.answersByRelation.get(managerRelation.id) || [] : [];
+  const usableSelfRelation = selfRelation?.id === relation.id ? undefined : selfRelation;
+  const usableManagerRelation = managerRelation?.id === relation.id ? undefined : managerRelation;
+  const selfScores = usableSelfRelation ? context.answersByRelation.get(usableSelfRelation.id) || [] : [];
+  const managerScores = usableManagerRelation ? context.answersByRelation.get(usableManagerRelation.id) || [] : [];
   const selfBySequence = new Map(
     selfScores.filter(answer => answer.question_seq !== null && answer.is_total === 0)
       .map(answer => [answer.question_seq!, answer])
@@ -195,6 +242,39 @@ export function buildQuestionContextFromReadContext(
     ? []
     : exportRow.performance_questions.map(enrich);
   const comprehensiveQuestions = exportRow.comprehensive_questions.map(enrich);
+  const references = (context.referenceRelationsByTarget?.get(relation.target_id) ?? [])
+    .filter(source => source.id !== relation.id)
+    .filter(source => {
+      if (relation.evaluator_level === 'manager' && relation.target_level === 'staff') return source.eval_type === 'self';
+      if (relation.evaluator_level === 'main_leader' || relation.evaluator_level === 'division_leader') {
+        if (relation.target_level === 'staff') {
+          return source.eval_type === 'self'
+            || (source.eval_type === 'downward' && source.evaluator_level === 'manager');
+        }
+        return source.eval_type === 'self'
+          || (source.eval_type === 'peer' && source.evaluator_level === 'manager');
+      }
+      return false;
+    })
+    .map<EvaluationReference>(source => {
+      const sourceAnswers = context.answersByRelation.get(source.id) ?? [];
+      const type: EvaluationReference['type'] = source.eval_type === 'self'
+        ? 'self'
+        : source.eval_type === 'peer' ? 'peer' : 'manager';
+      return {
+        type,
+        source_relation_id: source.id,
+        source_role: source.evaluator_level || source.role_type,
+        status: 'completed',
+        label: type === 'self'
+          ? (source.target_level === 'manager' ? '负责人自评' : '员工自评')
+          : type === 'peer' ? '负责人互评' : '主管评分',
+        total: totalOfAnswers(sourceAnswers),
+        scores: sourceAnswers
+          .filter(answer => answer.is_total === 0 && answer.question_seq !== null)
+          .map(answer => ({ question_seq: answer.question_seq!, score: Number(answer.score) })),
+      };
+    });
 
   return {
     ...exportRow,
@@ -205,5 +285,6 @@ export function buildQuestionContextFromReadContext(
       : [...performanceQuestions, ...comprehensiveQuestions],
     self_total: totalOfAnswers(selfScores),
     manager_total: totalOfAnswers(managerScores),
+    references,
   };
 }

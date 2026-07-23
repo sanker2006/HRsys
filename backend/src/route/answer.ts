@@ -9,7 +9,11 @@ import { buildStatistics, type StatisticsRow } from '../service/statistics.js';
 import { success, fail } from '../utils/response.js';
 import { auth } from '../middleware/auth.js';
 import { execute, queryAll, transaction, type DbExecutor } from '../db/query.js';
-import { getGradePolicyForRelation, submitDetailedItems } from '../service/gradedAnswerSubmission.js';
+import {
+  getGradePolicyForRelation,
+  previewDetailedGradeSubmission,
+  submitDetailedItems,
+} from '../service/gradedAnswerSubmission.js';
 import {
   buildQuestionContextFromReadContext,
   canEvaluateFromContext,
@@ -17,6 +21,10 @@ import {
   type EvaluationReadContext,
 } from '../service/answerReadContext.js';
 import type { Context } from 'koa';
+import {
+  findRevokeConsumers,
+  lockAndValidateEvaluationDependencies,
+} from '../service/evaluationDependencies.js';
 
 const router = new Router({ prefix: '/api/v1/answer' });
 
@@ -119,7 +127,39 @@ function validateLeaderTotals(relation: RelationRow, performance: unknown, compr
 }
 
 async function submitTotal(relation: RelationRow, score: number, draft: boolean): Promise<void> {
-  await AnswerModel.submitTotalWithStatus(relation.id, score, draft ? 'draft' : 'completed', draft);
+  await transaction(async tx => {
+    if (!draft) await lockAndValidateEvaluationDependencies(tx, [relation]);
+    else await tx.queryOne('SELECT id FROM relation WHERE id = ? FOR UPDATE', [relation.id]);
+    await tx.execute('DELETE FROM answer WHERE relation_id = ? AND is_total = 1', [relation.id]);
+    await tx.execute(
+      `INSERT INTO answer (relation_id, question_seq, score, is_total, is_draft)
+       VALUES (?, NULL, ?, 1, ?)`,
+      [relation.id, score, draft ? 1 : 0]
+    );
+    await tx.execute("UPDATE relation SET status = ?, updated_at = datetime('now') WHERE id = ?", [
+      draft ? 'draft' : 'completed',
+      relation.id,
+    ]);
+  });
+}
+
+async function submitLeaderTotals(
+  relation: RelationRow,
+  performance: number,
+  comprehensive: number,
+  draft: boolean
+): Promise<void> {
+  await transaction(async tx => {
+    if (!draft) await lockAndValidateEvaluationDependencies(tx, [relation]);
+    else await tx.queryOne('SELECT id FROM relation WHERE id = ? FOR UPDATE', [relation.id]);
+    await AnswerModel.replaceLeaderTotals(
+      tx,
+      relation.id,
+      performance,
+      comprehensive,
+      draft ? 'draft' : 'completed'
+    );
+  });
 }
 
 async function canSubmitForBatch(batchId: number): Promise<{ ok: boolean; message?: string }> {
@@ -144,6 +184,7 @@ function buildRelationSummary(relation: RelationRow, readContext: EvaluationRead
     target_position: relation.target_position,
     self_total: context?.self_total ?? null,
     manager_total: context?.manager_total ?? null,
+    references: context?.references ?? [],
     can_submit: gate.ok,
     blocked_reason: gate.reason ?? null,
   };
@@ -198,6 +239,7 @@ router.get('/relation/:relationId', async (ctx: Context) => {
     comprehensive_questions: context?.comprehensive_questions ?? [],
     self_total: context?.self_total ?? null,
     manager_total: context?.manager_total ?? null,
+    references: context?.references ?? [],
     can_submit: gate.ok,
     blocked_reason: gate.reason ?? null,
     mode,
@@ -209,6 +251,49 @@ router.get('/relation/:relationId', async (ctx: Context) => {
       file_size: personalSummary.file_size,
       uploaded_at: personalSummary.updated_at,
     } : null,
+  });
+});
+
+router.post('/relation/:relationId/submit-preview', async (ctx: Context) => {
+  const relationId = Number(ctx.params.relationId);
+  const userId = getUserId(ctx);
+  const relation = await RelationModel.findById(relationId);
+  if (!relation) return fail(ctx, '评价关系不存在', -1, 404);
+  if (relation.evaluator_id !== userId) return fail(ctx, '无权操作此评价', -1, 403);
+  if (relation.status === 'completed') return fail(ctx, '该评价已正式提交', -1, 409);
+  const gradedRelation = (
+    relation.eval_type === 'peer'
+    && relation.evaluator_level === 'staff'
+    && relation.target_level === 'staff'
+  ) || (
+    relation.eval_type === 'downward'
+    && relation.evaluator_level === 'manager'
+    && relation.target_level === 'staff'
+  );
+  if (!gradedRelation) return fail(ctx, '该评价关系不适用ABCDE提交预演', -1, 400);
+  const answers = (ctx.request.body as any)?.answers;
+  if (!Array.isArray(answers)) return fail(ctx, 'answers 必须是数组', -1, 400);
+  const batchGate = await canSubmitForBatch(relation.batch_id);
+  if (!batchGate.ok) return fail(ctx, batchGate.message, -1, 409);
+  const validationError = await validateDetailedAnswers(relation, answers, false);
+  if (validationError) return fail(ctx, validationError, -1, 400);
+  const normalized = normalizeDetailedAnswers(answers);
+  const [preview, gate] = await Promise.all([
+    previewDetailedGradeSubmission(relation, normalized),
+    canEvaluate(relation),
+  ]);
+  if (!preview) return fail(ctx, '该评价关系不适用ABCDE提交预演', -1, 400);
+  const canSubmit = gate.ok && preview.policy.valid;
+  success(ctx, {
+    total: preview.total,
+    grade: preview.grade,
+    scale: preview.policy.scale,
+    projected_counts: preview.policy.counts,
+    ranges: preview.policy.ranges,
+    constraints: preview.policy.constraints,
+    remaining_capacity: preview.policy.remaining_capacity,
+    can_submit: canSubmit,
+    reason: gate.ok ? preview.policy.message : gate.reason,
   });
 });
 
@@ -283,12 +368,7 @@ router.post('/leader-total', async (ctx: Context) => {
   if (!gate.ok) return fail(ctx, gate.reason);
   const validation = validateLeaderTotals(relation, performance_score, comprehensive_score);
   if (!validation.ok) return fail(ctx, validation.message);
-  await AnswerModel.submitLeaderTotalsWithStatus(
-    relation.id,
-    validation.performance!,
-    validation.comprehensive!,
-    draft ? 'draft' : 'completed'
-  );
+  await submitLeaderTotals(relation, validation.performance!, validation.comprehensive!, !!draft);
   success(ctx, null, draft ? '草稿已保存' : '提交成功');
 });
 
@@ -339,12 +419,7 @@ async function handleAnswerItems(userId: number, items: any[], defaultDraft: boo
   }
   for (const item of totals) await submitTotal(item.relation, item.score, item.draft);
   for (const item of leaderTotals) {
-    await AnswerModel.submitLeaderTotalsWithStatus(
-      item.relation.id,
-      item.performance,
-      item.comprehensive,
-      item.draft ? 'draft' : 'completed'
-    );
+    await submitLeaderTotals(item.relation, item.performance, item.comprehensive, item.draft);
   }
   return { saved: detailed.length + totals.length + leaderTotals.length };
 }
@@ -357,44 +432,6 @@ router.post('/batch', async (ctx: Context) => {
   if ('error' in result) return fail(ctx, result.error, -1, result.code || 200);
   success(ctx, { saved: result.saved }, draft ? '草稿已保存' : '提交成功');
 });
-
-async function completedLeaderDependencies(
-  relation: RelationRow,
-  db: Pick<DbExecutor, 'queryAll'> = { queryAll }
-) {
-  if (relation.eval_type === 'peer' && relation.evaluator_level === 'staff' && relation.target_level === 'manager') {
-    return [];
-  }
-  if (relation.eval_type === 'downward' && relation.evaluator_level === 'manager' && relation.target_level === 'staff') {
-    return db.queryAll<{ id: number; evaluator_name: string; target_name: string }>(
-      `SELECT DISTINCT lr.id, leader.name as evaluator_name, target.name as target_name
-       FROM relation lr
-       JOIN app_user leader ON leader.id = lr.evaluator_id
-       JOIN app_user target ON target.id = lr.target_id
-       WHERE lr.batch_id = ? AND lr.eval_type = 'downward' AND lr.status = 'completed'
-         AND leader.level IN ('main_leader', 'division_leader')
-         AND (
-           lr.target_id = ?
-           OR lr.target_id IN (
-             SELECT mr.target_id FROM relation mr
-             JOIN app_user mt ON mt.id = mr.target_id
-             WHERE mr.batch_id = ? AND mr.evaluator_id = ?
-               AND mr.eval_type = 'downward' AND mt.level = 'staff'
-           )
-         )`,
-      [relation.batch_id, relation.evaluator_id, relation.batch_id, relation.evaluator_id]
-    );
-  }
-  return db.queryAll<{ id: number; evaluator_name: string; target_name: string }>(
-    `SELECT lr.id, leader.name as evaluator_name, target.name as target_name
-     FROM relation lr
-     JOIN app_user leader ON leader.id = lr.evaluator_id
-     JOIN app_user target ON target.id = lr.target_id
-     WHERE lr.batch_id = ? AND lr.target_id = ? AND lr.eval_type = 'downward'
-       AND lr.status = 'completed' AND leader.level IN ('main_leader', 'division_leader')`,
-    [relation.batch_id, relation.target_id]
-  );
-}
 
 router.post('/relation/:relationId/revoke', async (ctx: Context) => {
   const relationId = Number(ctx.params.relationId);
@@ -409,12 +446,21 @@ router.post('/relation/:relationId/revoke', async (ctx: Context) => {
 
   const previousAnswers = await AnswerModel.findByRelationId(relationId);
   await transaction(async tx => {
-    const locked = await tx.queryOne<{ status: string }>('SELECT status FROM relation WHERE id = ? FOR UPDATE', [relationId]);
-    if (!locked || locked.status !== 'completed') throw Object.assign(new Error('评价状态已变化，请刷新后重试'), { status: 409 });
-    const dependencies = await completedLeaderDependencies(relation, tx);
+    const candidates = await findRevokeConsumers(tx, relation);
+    const lockIds = [...new Set([relationId, ...candidates.map(item => item.id)])].sort((a, b) => a - b);
+    const marks = lockIds.map(() => '?').join(',');
+    const lockedRows = await tx.queryAll<{ id: number; status: string }>(
+      `SELECT id, status FROM relation WHERE id IN (${marks}) ORDER BY id FOR UPDATE`,
+      lockIds
+    );
+    const lockedStatus = new Map(lockedRows.map(item => [item.id, item.status]));
+    if (lockedStatus.get(relationId) !== 'completed') {
+      throw Object.assign(new Error('评价状态已变化，请刷新后重试'), { status: 409 });
+    }
+    const dependencies = candidates.filter(item => lockedStatus.get(item.id) === 'completed');
     if (dependencies.length > 0) {
       const names = dependencies.slice(0, 3).map(item => `${item.evaluator_name}对${item.target_name}的评分`).join('、');
-      throw Object.assign(new Error(`该评分已被后续领导正式评分使用，不能撤销：${names}`), { status: 409 });
+      throw Object.assign(new Error(`该评分已被后续正式评分使用，不能撤销：${names}`), { status: 409 });
     }
     await tx.execute('UPDATE answer SET is_draft = 1, updated_at = datetime(\'now\') WHERE relation_id = ?', [relationId]);
     await tx.execute("UPDATE relation SET status = 'draft', updated_at = datetime('now') WHERE id = ?", [relationId]);

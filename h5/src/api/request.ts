@@ -57,6 +57,7 @@ api.interceptors.response.use(
         : path
       const tokenKey = relativePath.startsWith('/intern') ? 'intern_token' : 'h5_token'
       localStorage.removeItem(tokenKey)
+      if (tokenKey === 'h5_token') localStorage.removeItem('h5_must_change_password')
       location.href = relativePath.startsWith('/intern') ? `${PUBLIC_BASE}intern/login` : `${PUBLIC_BASE}login`
     }
     const msg = err.response?.data?.message || err.message || '网络错误'

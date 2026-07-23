@@ -115,9 +115,34 @@ export const RelationModel = {
            (r.eval_type = 'self' AND r.evaluator_id = r.target_id AND r.target_id IN (${marks}))
            OR
            (r.eval_type = 'downward' AND e.level = 'manager' AND r.target_id IN (${marks}))
+           OR
+           (r.eval_type = 'peer' AND e.level = t.level AND r.target_id IN (${marks}))
          )
+         AND r.status = 'completed'
        ORDER BY r.evaluator_id, r.eval_type, t.name, r.id`,
-      [batchId, ...ids, ...ids]
+      [batchId, ...ids, ...ids, ...ids]
+    );
+  },
+
+  async findIncomingPeerCompletion(
+    batchId: number,
+    targetIds: number[]
+  ): Promise<Array<{ target_id: number; total: number; completed: number }>> {
+    const ids = [...new Set(targetIds)].filter(Number.isFinite);
+    if (ids.length === 0) return [];
+    return queryAll<{ target_id: number; total: number; completed: number }>(
+      `SELECT r.target_id,
+              COUNT(*) AS total,
+              SUM(CASE WHEN r.status = 'completed' THEN 1 ELSE 0 END) AS completed
+         FROM relation r
+         JOIN app_user e ON e.id = r.evaluator_id
+         JOIN app_user t ON t.id = r.target_id
+        WHERE r.batch_id = ?
+          AND r.eval_type = 'peer'
+          AND e.level = t.level
+          AND r.target_id IN (${placeholders(ids)})
+        GROUP BY r.target_id`,
+      [batchId, ...ids]
     );
   },
 

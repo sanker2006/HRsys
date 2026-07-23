@@ -36,16 +36,14 @@
         </div>
 
         <div class="form-field">
-          <label class="field-label">证件后四位</label>
+          <label class="field-label">密码</label>
           <van-field
-            v-model="form.idCardTail"
-            placeholder="请输入身份证后4位"
-            maxlength="4"
+            v-model="form.password"
+            placeholder="请输入密码"
+            type="password"
+            maxlength="32"
             :border="false"
-            :rules="[
-              { required: true, message: '请输入证件后四位' },
-              { pattern: /^\d{4}$/, message: '仅限4位数字' }
-            ]"
+            :rules="[{ required: true, message: '请输入密码' }]"
             class="custom-field"
           />
         </div>
@@ -80,23 +78,29 @@ import { h5Api } from '../api'
 
 const router = useRouter()
 const loading = ref(false)
-const form = reactive({ phone: '', idCardTail: '' })
+const form = reactive({ phone: '', password: '' })
 
 async function handleLogin() {
-  if (!form.phone || !form.idCardTail) {
+  if (!form.phone || !form.password) {
     showToast('请填写完整信息')
     return
   }
-  if (!/^\d{4}$/.test(form.idCardTail)) {
-    showToast('证件后四位仅限4位数字')
+  if (!/^1\d{10}$/.test(form.phone)) {
+    showToast('手机号格式不正确')
     return
   }
   loading.value = true
   try {
-    const res: any = await h5Api.login(form.phone, form.idCardTail)
+    const res: any = await h5Api.login(form.phone, form.password)
     if (res.code === 0) {
       localStorage.setItem('h5_token', res.data.token)
-      router.replace('/home')
+      if (res.data.must_change_password) {
+        localStorage.setItem('h5_must_change_password', '1')
+        router.replace('/change-password')
+      } else {
+        localStorage.removeItem('h5_must_change_password')
+        router.replace('/home')
+      }
     }
   } finally {
     loading.value = false

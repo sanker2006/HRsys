@@ -17,6 +17,11 @@ const router = createRouter({
       component: () => import('../views/Login.vue'),
     },
     {
+      path: '/change-password',
+      name: 'ChangePassword',
+      component: () => import('../views/ChangePassword.vue'),
+    },
+    {
       path: '/intern/login',
       name: 'InternLogin',
       component: () => import('../views/InternLogin.vue'),
@@ -96,10 +101,15 @@ router.beforeEach((to, _from, next) => {
     return
   }
   const token = localStorage.getItem('h5_token')
+  const mustChangePassword = localStorage.getItem('h5_must_change_password') === '1'
   if (!token && to.path !== '/login') {
     next('/login')
-  } else if (to.path === '/login' && token) {
+  } else if (token && mustChangePassword && to.path !== '/change-password') {
+    next('/change-password')
+  } else if (to.path === '/change-password' && token && !mustChangePassword) {
     next('/home')
+  } else if (to.path === '/login' && token) {
+    next(mustChangePassword ? '/change-password' : '/home')
   } else {
     next()
   }

@@ -10,6 +10,13 @@ const base = process.env.PRESSURE_BASE_URL || `http://127.0.0.1:${port}/api/v1`;
 const shouldStartServer = !process.env.PRESSURE_BASE_URL;
 const adminAccount = process.env.ADMIN_ACCOUNT || 'admin';
 const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
+const h5Credentials = (() => {
+  const raw = process.env.PRESSURE_H5_CREDENTIALS_JSON;
+  if (!raw) return [] as Array<{ phone: string; password: string }>;
+  const parsed = JSON.parse(raw);
+  if (!Array.isArray(parsed)) throw new Error('PRESSURE_H5_CREDENTIALS_JSON 必须是账号数组');
+  return parsed.map(item => ({ phone: String(item.phone || ''), password: String(item.password || '') }));
+})();
 
 type Metric = {
   name: string;
@@ -155,17 +162,24 @@ async function main(): Promise<void> {
 
   const usersPage = await ok('/user/?status=active&pageSize=100', { token: adminToken });
   const h5Tokens: string[] = [];
-  for (const user of usersPage.list.filter((u: any) => !u.is_admin && u.level !== 'admin')) {
+  const credentials = h5Credentials.length > 0
+    ? h5Credentials
+    : usersPage.list
+      .filter((user: any) => !user.is_admin && user.level !== 'admin')
+      .map((user: any) => ({ phone: user.phone, password: String(user.phone).slice(-4) }));
+  for (const credential of credentials) {
     try {
       const login = await ok('/auth/h5-login', {
         method: 'POST',
-        body: { phone: user.phone, idCardTail: user.id_card_tail },
+        body: credential,
       });
-      h5Tokens.push(login.token);
+      if (!login.must_change_password) h5Tokens.push(login.token);
     } catch {}
     if (h5Tokens.length >= 20) break;
   }
-  if (h5Tokens.length === 0) throw new Error('没有可登录的 H5 用户，无法压测评价任务接口');
+  if (h5Tokens.length === 0) {
+    throw new Error('没有可用的已改密H5账号；请通过 PRESSURE_H5_CREDENTIALS_JSON 提供测试凭据');
+  }
 
   let draftRelationId: number | undefined;
   let draftAnswers: Array<{ seq: number; score: number }> = [];

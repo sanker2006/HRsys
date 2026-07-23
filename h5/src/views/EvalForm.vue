@@ -1,21 +1,21 @@
 <template>
   <div class="page">
-    <van-nav-bar :title="targetName" left-arrow @click-left="router.back()" class="nav" />
+    <EvaluationStickyHeader :title="targetName" @back="router.back()">
+      <section class="score-dock">
+        <div>
+          <div class="dock-kicker">{{ relationLabel }}</div>
+          <div class="dock-title">{{ targetName }}</div>
+        </div>
+        <div class="dock-score">
+          <b>{{ displayTotal }}</b>
+          <span>分</span>
+        </div>
+      </section>
+    </EvaluationStickyHeader>
 
     <van-notice-bar v-if="blockedReason && !isCompleted" color="#7c4a03" background="#f5e4bd">
       {{ blockedReason }}
     </van-notice-bar>
-
-    <section class="score-dock">
-      <div>
-        <div class="dock-kicker">{{ relationLabel }}</div>
-        <div class="dock-title">{{ targetName }}</div>
-      </div>
-      <div class="dock-score">
-        <b>{{ displayTotal }}</b>
-        <span>分</span>
-      </div>
-    </section>
 
     <PersonalSummaryDownload :relation-id="props.relationId" :summary="personalSummary" />
 
@@ -46,8 +46,9 @@
           </div>
           <div class="meta-line">
             <span>满分 {{ formatNumber(q.weight) }} 分</span>
-            <span v-if="q.self_score !== null && q.self_score !== undefined">自评 {{ formatNumber(q.self_score) }} 分</span>
-            <span v-if="q.manager_score !== null && q.manager_score !== undefined">主管 {{ formatNumber(q.manager_score) }} 分</span>
+            <span v-for="item in referenceScores(q.answer_seq)" :key="`${item.source_relation_id}-${q.answer_seq}`">
+              {{ item.label }} {{ formatNumber(item.score) }} 分
+            </span>
           </div>
           <van-slider v-model="answers[q.answer_seq]" :min="0" :max="q.weight" :step="0.1" :disabled="isReadonly" />
         </article>
@@ -62,8 +63,9 @@
           </div>
           <div class="meta-line">
             <span>满分 {{ formatNumber(q.weight) }} 分</span>
-            <span v-if="q.self_score !== null && q.self_score !== undefined">自评 {{ formatNumber(q.self_score) }} 分</span>
-            <span v-if="q.manager_score !== null && q.manager_score !== undefined">主管 {{ formatNumber(q.manager_score) }} 分</span>
+            <span v-for="item in referenceScores(q.answer_seq)" :key="`${item.source_relation_id}-${q.answer_seq}`">
+              {{ item.label }} {{ formatNumber(item.score) }} 分
+            </span>
           </div>
           <van-slider v-model="answers[q.answer_seq]" :min="0" :max="q.weight" :step="0.1" :disabled="isReadonly" />
         </article>
@@ -90,7 +92,7 @@
     <van-dialog
       v-model:show="confirmSubmit"
       title="确认提交"
-      :message="`本次评分合计 ${displayTotal} 分，提交后将标记为已完成。`"
+      :message="submitConfirmMessage"
       show-cancel-button
       confirm-button-text="确认提交"
       cancel-button-text="取消"
@@ -105,12 +107,14 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { h5Api } from '../api'
 import PersonalSummaryDownload from '../components/PersonalSummaryDownload.vue'
+import EvaluationStickyHeader from '../components/EvaluationStickyHeader.vue'
 
 const props = defineProps<{ relationId: string }>()
 const router = useRouter()
 
 const relation = ref<any>(null)
 const personalSummary = ref<any>(null)
+const references = ref<any[]>([])
 const mode = ref('detail')
 const blockedReason = ref('')
 const performanceQuestions = ref<any[]>([])
@@ -134,6 +138,9 @@ const relationLabel = computed(() => {
 })
 const detailedTotal = computed(() => Object.values(answers).reduce((sum, value) => sum + Number(value || 0), 0))
 const displayTotal = computed(() => Number((mode.value === 'leader_totals' ? leaderPerformance.value + leaderComprehensive.value : detailedTotal.value).toFixed(1)))
+const submitConfirmMessage = computed(() => relation.value?.eval_type === 'self'
+  ? `本次自评总分为 ${displayTotal.value.toFixed(1)} 分，请确认后正式提交。`
+  : `本次评分合计 ${displayTotal.value.toFixed(1)} 分，正式提交后不能直接修改，请认真确认。`)
 
 function collectAnswers() {
   return [...performanceQuestions.value, ...comprehensiveQuestions.value].map((q: any) => ({
@@ -145,6 +152,16 @@ function collectAnswers() {
 function formatNumber(value: number | string | null | undefined) {
   const numberValue = Number(value ?? 0)
   return Number.isFinite(numberValue) ? numberValue.toFixed(1) : '0.0'
+}
+
+function referenceScores(questionSeq: number) {
+  return references.value
+    .filter(item => item.type !== 'peer')
+    .map(item => ({
+      ...item,
+      score: item.scores?.find((score: any) => score.question_seq === questionSeq)?.score,
+    }))
+    .filter(item => item.score !== undefined && item.score !== null)
 }
 
 async function submit(draft: boolean) {
@@ -200,6 +217,7 @@ onMounted(async () => {
     const data = res.data || {}
     relation.value = data.relation
     personalSummary.value = data.personal_summary || null
+    references.value = data.references || []
     mode.value = data.mode || 'detail'
     blockedReason.value = data.can_submit === false ? data.blocked_reason || '当前暂不能提交' : ''
     performanceQuestions.value = data.performance_questions || []
@@ -222,24 +240,9 @@ onMounted(async () => {
   background:
     radial-gradient(circle at 100% 12%, rgba(3, 100, 134, .10), transparent 34%),
     var(--hr-bg);
-  padding-top: 150px;
   padding-bottom: calc(104px + env(safe-area-inset-bottom, 0px));
 }
-.nav {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 60;
-  height: 46px;
-  background: #f6f9fc;
-}
 .score-dock {
-  position: fixed;
-  top: 46px;
-  left: 0;
-  right: 0;
-  z-index: 55;
   display: flex;
   align-items: center;
   justify-content: space-between;

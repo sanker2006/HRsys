@@ -39,8 +39,10 @@ async function ensureAdmin(): Promise<void> {
 
   const hash = bcrypt.hashSync('admin123', 12);
   await getMysqlPool().execute(
-    `INSERT INTO app_user (name, employee_no, department, position, level, phone, id_card_tail, password, is_admin)
-     VALUES ('系统管理员', 'admin', '系统', '管理员', 'admin', '00000000000', '0000', ?, 1)`,
+    `INSERT INTO app_user
+      (name, employee_no, department, position, level, phone, id_card_tail, password,
+       must_change_password, password_version, is_admin)
+     VALUES ('系统管理员', 'admin', '系统', '管理员', 'admin', '00000000000', '0000', ?, 0, 1, 1)`,
     [hash]
   );
 }

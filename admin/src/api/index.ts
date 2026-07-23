@@ -22,6 +22,9 @@ export const userApi = {
   delete(id: number) {
     return api.delete(`/user/${id}`)
   },
+  resetPassword(id: number) {
+    return api.post(`/user/${id}/reset-password`)
+  },
   departments() {
     return api.get('/user/departments')
   },

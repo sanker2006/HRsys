@@ -12,6 +12,8 @@ export interface UserRow {
   phone: string;
   id_card_tail: string;
   password: string;
+  must_change_password: number;
+  password_version: number;
   status: 'active' | 'inactive';
   is_admin: number;
   created_at: string;
@@ -28,6 +30,7 @@ export interface UserPublic {
   level: UserLevel;
   phone: string;
   id_card_tail: string;
+  must_change_password: number;
   status: 'active' | 'inactive';
   is_admin: number;
   created_at: string;
@@ -35,8 +38,23 @@ export interface UserPublic {
 }
 
 function toPublic(row: UserRow): UserPublic {
-  const { password: _, ...pub } = row;
+  const { password: _, password_version: __, ...pub } = row;
   return pub as UserPublic;
+}
+
+function toH5Public(row: UserRow) {
+  return {
+    id: row.id,
+    name: row.name,
+    employee_no: row.employee_no,
+    department: row.department,
+    position: row.position,
+    level: row.level,
+    phone: row.phone,
+    status: row.status,
+    must_change_password: row.must_change_password,
+    managed_departments: row.managed_departments ?? [],
+  };
 }
 
 function normalizeLevel(level: string): UserLevel {
@@ -146,12 +164,27 @@ async function assertSingleMainLeader(level: string, excludeId?: number): Promis
 }
 
 export const UserModel = {
+  findAuthById(id: number): Promise<UserRow | undefined> {
+    return queryOne<UserRow>('SELECT * FROM app_user WHERE id = ?', [id]);
+  },
+
+  findAuthByPhone(phone: string): Promise<UserRow | undefined> {
+    return queryOne<UserRow>('SELECT * FROM app_user WHERE phone = ?', [phone]);
+  },
+
   async findById(id: number): Promise<UserRow | undefined> {
     return attachManagedDepartments(await queryOne<UserRow>('SELECT * FROM app_user WHERE id = ?', [id]));
   },
 
   async findByPhone(phone: string): Promise<UserRow | undefined> {
     return attachManagedDepartments(await queryOne<UserRow>('SELECT * FROM app_user WHERE phone = ?', [phone]));
+  },
+
+  async findPhoneConflict(phone: string, excludeId = 0): Promise<UserRow | undefined> {
+    return attachManagedDepartments(await queryOne<UserRow>(
+      'SELECT * FROM app_user WHERE phone = ? AND id != ? LIMIT 1',
+      [phone, excludeId]
+    ));
   },
 
   async findByPhoneAndIdCard(phone: string, idCardTail: string): Promise<UserRow | undefined> {
@@ -167,10 +200,10 @@ export const UserModel = {
   },
 
   async findByAccount(account: string): Promise<UserRow | undefined> {
-    return attachManagedDepartments(await queryOne<UserRow>(
+    return queryOne<UserRow>(
       'SELECT * FROM app_user WHERE (employee_no = ? OR phone = ?) AND is_admin = 1',
       [account, account]
-    ));
+    );
   },
 
   async findAll(filters?: { department?: string; level?: string; keyword?: string; status?: string }): Promise<UserRow[]> {
@@ -221,18 +254,25 @@ export const UserModel = {
 
   async create(data: {
     name: string; employee_no: string; department: string; position: string;
-    level: string; phone: string; id_card_tail: string; password: string; status?: string; is_admin?: number; managed_departments?: string[];
+    level: string; phone: string; id_card_tail: string; password: string; status?: string; is_admin?: number;
+    must_change_password?: number; password_version?: number; managed_departments?: string[];
   }): Promise<UserRow> {
     const level = normalizeLevel(data.level);
     await assertSingleMainLeader(level);
-    const existing = await this.findByPhoneAndIdCard(data.phone, data.id_card_tail);
-    if (existing) throw new Error(`手机号 ${data.phone} + 证件后四位 ${data.id_card_tail} 已被用户「${existing.name}」使用`);
+    const existing = await this.findPhoneConflict(data.phone);
+    if (existing) throw new Error(`手机号 ${data.phone} 已被用户「${existing.name}」使用`);
 
     await transaction(async tx => {
       await tx.execute(
-        `INSERT INTO app_user (name, employee_no, department, position, level, phone, id_card_tail, password, status, is_admin)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [data.name, data.employee_no, data.department, data.position, level, data.phone, data.id_card_tail, data.password, normalizeStatus(data.status), data.is_admin ?? 0]
+        `INSERT INTO app_user
+          (name, employee_no, department, position, level, phone, id_card_tail, password,
+           must_change_password, password_version, status, is_admin)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          data.name, data.employee_no, data.department, data.position, level, data.phone,
+          data.id_card_tail, data.password, data.must_change_password ?? (data.is_admin ? 0 : 1),
+          data.password_version ?? 1, normalizeStatus(data.status), data.is_admin ?? 0,
+        ]
       );
       const created = await tx.queryOne<UserRow>('SELECT * FROM app_user WHERE employee_no = ? FOR UPDATE', [data.employee_no]);
       if (!created) throw new Error('创建用户后无法获取记录');
@@ -253,7 +293,8 @@ export const UserModel = {
 
   async update(id: number, data: Partial<{
     name: string; department: string; position: string; level: string;
-    phone: string; id_card_tail: string; password: string; status: string; is_admin: number; managed_departments: string[];
+    phone: string; id_card_tail: string; password: string; must_change_password: number;
+    password_version: number; status: string; is_admin: number; managed_departments: string[];
   }>): Promise<void> {
     const current = await this.findById(id);
     if (!current) throw new Error('用户不存在');
@@ -262,9 +303,8 @@ export const UserModel = {
 
     if (data.phone !== undefined || data.id_card_tail !== undefined) {
       const phone = data.phone ?? current.phone;
-      const idCardTail = data.id_card_tail ?? current.id_card_tail;
-      const conflict = await this.findByPhoneAndIdCardExclude(phone, idCardTail, id);
-      if (conflict) throw new Error(`手机号 ${phone} + 证件后四位 ${idCardTail} 已被用户「${conflict.name}」使用`);
+      const conflict = await this.findPhoneConflict(phone, id);
+      if (conflict) throw new Error(`手机号 ${phone} 已被用户「${conflict.name}」使用`);
     }
 
     await transaction(async tx => {
@@ -278,6 +318,8 @@ export const UserModel = {
       if (data.phone !== undefined) { fields.push('phone = ?'); params.push(data.phone); }
       if (data.id_card_tail !== undefined) { fields.push('id_card_tail = ?'); params.push(data.id_card_tail); }
       if (data.password !== undefined) { fields.push('password = ?'); params.push(data.password); }
+      if (data.must_change_password !== undefined) { fields.push('must_change_password = ?'); params.push(data.must_change_password); }
+      if (data.password_version !== undefined) { fields.push('password_version = ?'); params.push(data.password_version); }
       if (data.status !== undefined) { fields.push('status = ?'); params.push(normalizeStatus(data.status)); }
       if (data.is_admin !== undefined) { fields.push('is_admin = ?'); params.push(data.is_admin); }
       if (fields.length > 0) {
@@ -300,13 +342,57 @@ export const UserModel = {
     });
   },
 
+  async changePassword(id: number, password: string, ip: string | null): Promise<UserRow> {
+    await transaction(async tx => {
+      const current = await tx.queryOne<UserRow>('SELECT * FROM app_user WHERE id = ? FOR UPDATE', [id]);
+      if (!current) throw new Error('用户不存在');
+      await tx.execute(
+        `UPDATE app_user
+            SET password = ?, must_change_password = 0, password_version = password_version + 1,
+                updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?`,
+        [password, id]
+      );
+      await tx.execute('INSERT INTO log (user_id, action, ip, detail) VALUES (?, ?, ?, ?)', [
+        id,
+        'auth.change_password',
+        ip,
+        JSON.stringify({ password_version: current.password_version + 1 }),
+      ]);
+    });
+    return (await this.findById(id))!;
+  },
+
+  async resetPassword(id: number, password: string, actorId: number, ip: string | null): Promise<UserRow> {
+    await transaction(async tx => {
+      const current = await tx.queryOne<UserRow>('SELECT * FROM app_user WHERE id = ? FOR UPDATE', [id]);
+      if (!current) throw new Error('用户不存在');
+      if (current.is_admin === 1) throw new Error('不能重置管理员密码');
+      await tx.execute(
+        `UPDATE app_user
+            SET password = ?, must_change_password = 1, password_version = password_version + 1,
+                updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?`,
+        [password, id]
+      );
+      await tx.execute('INSERT INTO log (user_id, action, ip, detail) VALUES (?, ?, ?, ?)', [
+        actorId,
+        'user.reset_password',
+        ip,
+        JSON.stringify({ target_user_id: id, password_version: current.password_version + 1 }),
+      ]);
+    });
+    return (await this.findById(id))!;
+  },
+
   delete(id: number): Promise<void> {
     return execute('DELETE FROM app_user WHERE id = ?', [id]);
   },
 
   async batchCreate(users: Array<{
     name: string; employee_no: string; department: string; position: string;
-    level: string; phone: string; id_card_tail: string; password: string; status?: string; managed_departments?: string[]; source_row?: number;
+    level: string; phone: string; id_card_tail: string; password: string; status?: string;
+    must_change_password?: number; managed_departments?: string[]; source_row?: number;
   }>): Promise<{ success: number; errors: Array<{ row: number; message: string }> }> {
     const errors: Array<{ row: number; message: string }> = [];
     let success = 0;
@@ -320,9 +406,9 @@ export const UserModel = {
           errors.push({ row: u.source_row ?? i + 2, message: `工号 ${u.employee_no} 已存在` });
           continue;
         }
-        const dup = await this.findByPhoneAndIdCard(u.phone, u.id_card_tail);
+        const dup = await this.findPhoneConflict(u.phone);
         if (dup) {
-          errors.push({ row: u.source_row ?? i + 2, message: `手机号 ${u.phone} + 证件后四位 ${u.id_card_tail} 已被用户「${dup.name}」使用` });
+          errors.push({ row: u.source_row ?? i + 2, message: `手机号 ${u.phone} 已被用户「${dup.name}」使用` });
           continue;
         }
         await assertSingleMainLeader(level);
@@ -336,5 +422,6 @@ export const UserModel = {
   },
 
   toPublic,
+  toH5Public,
   normalizeStatus,
 };

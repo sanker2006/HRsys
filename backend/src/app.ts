@@ -7,6 +7,7 @@ import { performance } from './middleware/performance.js';
 import router from './route/index.js';
 
 const app = new Koa();
+app.proxy = config.trustProxy;
 
 app.use(performance);
 app.use(error);

@@ -1,18 +1,18 @@
 <template>
   <div class="page">
-    <van-nav-bar :title="targetName" left-arrow @click-left="router.back()" class="nav" />
-
-    <section v-if="relation" class="score-dock">
-      <div>
-        <div class="dock-kicker">同级互评 · 综合评价</div>
-        <div class="dock-title">{{ targetName }}</div>
-        <div class="dock-meta">{{ relation.target_department }} · {{ relation.target_position || roleText(relation.target_level) }}</div>
-      </div>
-      <div class="dock-score">
-        <b>{{ displayTotal }}</b>
-        <span>分</span>
-      </div>
-    </section>
+    <EvaluationStickyHeader :title="targetName" @back="router.back()">
+      <section v-if="relation" class="score-dock">
+        <div>
+          <div class="dock-kicker">同级互评 · 综合评价</div>
+          <div class="dock-title">{{ targetName }}</div>
+          <div class="dock-meta">{{ relation.target_department }} · {{ relation.target_position || roleText(relation.target_level) }}</div>
+        </div>
+        <div class="dock-score">
+          <b>{{ displayTotal }}</b>
+          <span>分</span>
+        </div>
+      </section>
+    </EvaluationStickyHeader>
 
     <PersonalSummaryDownload :relation-id="props.relationId" :summary="personalSummary" />
     <GradePolicyPanel :policy="gradePolicy" />
@@ -49,13 +49,15 @@
 </template>
 
 <script setup lang="ts">
-import { closeToast, showConfirmDialog, showLoadingToast, showToast } from 'vant'
+import { closeToast, showConfirmDialog, showDialog, showLoadingToast, showToast } from 'vant'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { h5Api } from '../api'
 import PersonalSummaryDownload from '../components/PersonalSummaryDownload.vue'
 import GradePolicyPanel from '../components/GradePolicyPanel.vue'
+import EvaluationStickyHeader from '../components/EvaluationStickyHeader.vue'
 import { reportClientPerformance } from '../utils/performance'
+import { gradeBlockedMessage, gradeConfirmMessage } from '../utils/gradePreview'
 
 const props = defineProps<{ batchId: string; relationId: string }>()
 const router = useRouter()
@@ -154,11 +156,44 @@ async function submit(draft: boolean) {
   if (draft) drafting.value = true
   else submitting.value = true
   try {
+    if (!draft) {
+      const previewRes: any = await h5Api.previewSubmit(Number(props.relationId), collectAnswers())
+      const preview = previewRes.data
+      if (!preview.can_submit) {
+        await showDialog({
+          title: '当前评分不能提交',
+          message: gradeBlockedMessage(preview),
+          confirmButtonText: '知道了',
+        })
+        return
+      }
+      try {
+        await showConfirmDialog({
+          title: '确认正式提交',
+          message: gradeConfirmMessage(preview),
+          confirmButtonText: '确认提交',
+          cancelButtonText: '返回检查',
+        })
+      } catch {
+        return
+      }
+    }
     showLoadingToast({ message: draft ? '保存中...' : '提交中...', forbidClick: true })
     await h5Api.submitDetail({ relation_id: Number(props.relationId), answers: collectAnswers(), draft })
     closeToast()
     showToast(draft ? '草稿已保存' : '提交成功')
     await Promise.all([ensureList(true), loadDetail()])
+  } catch (error: any) {
+    if (!draft && error?.response?.status === 409) {
+      try {
+        const latest: any = await h5Api.previewSubmit(Number(props.relationId), collectAnswers())
+        const value = latest.data
+        await showDialog({
+          title: '档位状态已更新',
+          message: `${value.reason || '其他评价已先提交，请按最新档位重新确认。'}\n当前评分属于${value.grade}级。`,
+        })
+      } catch {}
+    }
   } finally {
     drafting.value = false
     submitting.value = false
@@ -220,24 +255,9 @@ watch(() => props.relationId, loadPage)
   background:
     radial-gradient(circle at 100% 12%, rgba(3, 100, 134, .10), transparent 34%),
     var(--hr-bg);
-  padding-top: 150px;
   padding-bottom: calc(108px + env(safe-area-inset-bottom, 0px));
 }
-.nav {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 60;
-  height: 46px;
-  background: #f6f9fc;
-}
 .score-dock {
-  position: fixed;
-  top: 46px;
-  left: 0;
-  right: 0;
-  z-index: 55;
   display: flex;
   align-items: center;
   justify-content: space-between;

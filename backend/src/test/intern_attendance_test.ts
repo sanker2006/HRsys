@@ -105,7 +105,7 @@ try {
   const inactiveLogin = await request('/intern-auth/login', { body: { phone: inactivePhone, idCardTail: '5678' } });
   assert(inactiveLogin.code !== 0, 'inactive intern should not login');
 
-  const employeeLogin = await request('/auth/h5-login', { body: { phone: activePhone, idCardTail: '1234' } });
+  const employeeLogin = await request('/auth/h5-login', { body: { phone: activePhone, password: '1234' } });
   assert(employeeLogin.code !== 0, 'intern account should not login to employee h5');
 
   const adminAsIntern = await request('/intern-auth/login', { body: { phone: '00000000000', idCardTail: '0000' } });

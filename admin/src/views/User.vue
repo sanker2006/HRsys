@@ -88,9 +88,10 @@
         </el-table-column>
         <el-table-column prop="phone" label="手机号" width="130" />
         <el-table-column prop="id_card_tail" label="证件后四位" width="110" />
-        <el-table-column label="操作" width="160" fixed="right">
+        <el-table-column label="操作" width="250" fixed="right">
           <template #default="{ row }">
             <el-button size="small" @click="openDialog(row)">编辑</el-button>
+            <el-button v-if="!row.is_admin" size="small" type="warning" plain @click="handleResetPassword(row)">重置密码</el-button>
             <el-button size="small" type="danger" @click="handleDelete(row)" v-if="!row.is_admin">删除</el-button>
           </template>
         </el-table-column>
@@ -313,6 +314,17 @@ async function handleDelete(row: any) {
   await userApi.delete(row.id)
   await Promise.all([loadUsers(), loadUserStats()])
   ElMessage.success('已删除')
+}
+
+async function handleResetPassword(row: any) {
+  await ElMessageBox.confirm(
+    `确认将「${row.name}」的密码重置为手机号后四位？该用户当前登录状态会立即失效，下次登录必须修改密码。`,
+    '重置密码',
+    { type: 'warning', confirmButtonText: '确认重置' },
+  )
+  await userApi.resetPassword(row.id)
+  await loadUsers()
+  ElMessage.success('密码已重置')
 }
 
 function downloadImportTemplate() {

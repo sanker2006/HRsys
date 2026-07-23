@@ -3,6 +3,10 @@ import ExcelJS from 'exceljs';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import type { Context } from 'koa';
+import {
+  lockAndValidateEvaluationDependencies,
+  validateEvaluationDependenciesFromRelations,
+} from '../service/evaluationDependencies.js';
 import { auth } from '../middleware/auth.js';
 import { admin } from '../middleware/admin.js';
 import { AnswerModel, LEADER_COMPREHENSIVE_SEQ, LEADER_PERFORMANCE_SEQ, type AnswerRow } from '../model/answer.js';
@@ -260,17 +264,8 @@ async function parseWorkbook(buffer: Buffer, batchId: number, leaderId: number, 
 async function validateLeaderPrerequisites(batchId: number, relations: RelationRow[]): Promise<string | null> {
   const all = await RelationModel.findByBatchId(batchId);
   for (const relation of relations) {
-    if (relation.target_level === 'manager') {
-      const self = all.find(row => row.eval_type === 'self' && row.target_id === relation.target_id);
-      if (self?.status !== 'completed') return `${relation.target_name}尚未完成负责人自评`;
-      const staffRows = all.filter(row => row.eval_type === 'downward' && row.evaluator_id === relation.target_id && row.target_level === 'staff');
-      if (!staffRows.length || staffRows.some(row => row.status !== 'completed')) return `${relation.target_name}尚未完成所负责部门的全部员工评分`;
-    } else {
-      const manager = all.find(row => row.eval_type === 'downward' && row.target_id === relation.target_id && row.evaluator_level === 'manager');
-      if (manager?.status !== 'completed') return `${relation.target_name}的部门负责人评分尚未完成`;
-      const staffRows = all.filter(row => row.eval_type === 'downward' && row.evaluator_id === manager.evaluator_id && row.target_level === 'staff');
-      if (staffRows.some(row => row.status !== 'completed')) return `${manager.evaluator_name}尚未完成所负责部门的全部员工评分`;
-    }
+    const gate = validateEvaluationDependenciesFromRelations(relation, all);
+    if (!gate.ok) return `${relation.target_name}：${gate.reason}`;
   }
   return null;
 }
@@ -317,6 +312,8 @@ router.get('/:batchId/:leaderId/export', async (ctx: Context) => {
   const batch = await BatchModel.findById(batchId);
   if (!batch) return fail(ctx, '批次不存在', -1, 404);
   const context = await buildTemplateContext(batchId, leaderId);
+  const prerequisiteError = await validateLeaderPrerequisites(batchId, context.relations);
+  if (prerequisiteError) return fail(ctx, prerequisiteError, -1, 409);
   const workbook = new ExcelJS.Workbook();
   addTemplateSheet(workbook, context.rows, batchId, leaderId, context.referenceFingerprint);
   const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
@@ -369,6 +366,7 @@ router.post('/:batchId/:leaderId/import', async (ctx: Context) => {
     return fail(ctx, `存在${conflicts.length}条已完成评分，请确认覆盖`, -1, 409);
   }
   await transaction(async tx => {
+    await lockAndValidateEvaluationDependencies(tx, result.parsed.map(item => item.relation));
     const lockedReferenceRelations: RelationRow[] = [];
     const lockedAnswers = new Map<number, AnswerRow[]>();
     for (const reference of result.context.referenceRelations.slice().sort((a, b) => a.id - b.id)) {
