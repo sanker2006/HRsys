@@ -11,6 +11,7 @@ export interface ClientPerformanceMetric {
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 const REPORT_IN_DEV = import.meta.env.VITE_PERFORMANCE_REPORTING === 'true'
 const SLOW_THRESHOLD_MS = 2000
+let baselineSample: boolean | undefined
 
 function normalizeName(value: string): string {
   let path = value
@@ -24,12 +25,20 @@ function normalizeName(value: string): string {
 }
 
 function baselineSampled(): boolean {
+  if (baselineSample !== undefined) return baselineSample
   const key = 'h5_performance_sampled'
-  const saved = sessionStorage.getItem(key)
-  if (saved !== null) return saved === '1'
-  const sampled = Math.random() < 0.05
-  sessionStorage.setItem(key, sampled ? '1' : '0')
-  return sampled
+  try {
+    const saved = sessionStorage.getItem(key)
+    if (saved !== null) {
+      baselineSample = saved === '1'
+      return baselineSample
+    }
+    baselineSample = Math.random() < 0.05
+    sessionStorage.setItem(key, baselineSample ? '1' : '0')
+  } catch {
+    baselineSample = false
+  }
+  return baselineSample
 }
 
 function effectiveNetwork(): string | undefined {
@@ -46,25 +55,29 @@ export function parseServerTiming(header: string | null): number | undefined {
 
 export function reportClientPerformance(metric: ClientPerformanceMetric): void {
   if (!import.meta.env.PROD && !REPORT_IN_DEV) return
-  if (metric.duration_ms < SLOW_THRESHOLD_MS && !baselineSampled()) return
-  const token = localStorage.getItem('h5_token')
-  if (!token) return
-  const payload = {
-    ...metric,
-    name: normalizeName(metric.name),
-    duration_ms: Math.round(metric.duration_ms * 10) / 10,
-    server_ms: metric.server_ms === undefined ? undefined : Math.round(metric.server_ms * 10) / 10,
-    network: effectiveNetwork(),
-  }
   queueMicrotask(() => {
-    void fetch(`${API_BASE}/performance/client`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(payload),
-      keepalive: true,
-    }).catch(() => {})
+    try {
+      if (metric.duration_ms < SLOW_THRESHOLD_MS && !baselineSampled()) return
+      const token = localStorage.getItem('h5_token')
+      if (!token) return
+      const payload = {
+        ...metric,
+        name: normalizeName(metric.name),
+        duration_ms: Math.round(metric.duration_ms * 10) / 10,
+        server_ms: metric.server_ms === undefined ? undefined : Math.round(metric.server_ms * 10) / 10,
+        network: effectiveNetwork(),
+      }
+      void fetch(`${API_BASE}/performance/client`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+        keepalive: true,
+      }).catch(() => {})
+    } catch {
+      // Telemetry must never affect authentication, scoring, or navigation.
+    }
   })
 }
