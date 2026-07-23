@@ -1,17 +1,27 @@
-const GRADES = ['A', 'B', 'C', 'D', 'E'] as const
+import {
+  gradeConstraintStatusLines,
+  type Grade,
+  type GradeConstraint,
+} from './gradePolicyDisplay'
 
 export interface SubmitPreview {
   total: number
   grade: string
   can_submit: boolean
   reason?: string | null
-  remaining_capacity?: Partial<Record<(typeof GRADES)[number], number>>
+  group_size?: number
+  projected_counts?: Partial<Record<Grade, number>>
+  constraints?: GradeConstraint[]
+  remaining_capacity?: Partial<Record<Grade, number>>
 }
 
 export function gradeCapacityText(preview: SubmitPreview): string {
-  return GRADES
-    .map(grade => `${grade}级还可提交 ${preview.remaining_capacity?.[grade] ?? 0} 人`)
-    .join('，')
+  return gradeConstraintStatusLines({
+    group_size: preview.group_size ?? Object.values(preview.projected_counts ?? {}).reduce((sum, count) => sum + (count ?? 0), 0),
+    counts: preview.projected_counts,
+    constraints: preview.constraints,
+    remaining_capacity: preview.remaining_capacity,
+  }).join('\n')
 }
 
 export function gradeConfirmMessage(preview: SubmitPreview): string {

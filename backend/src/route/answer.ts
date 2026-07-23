@@ -288,6 +288,7 @@ router.post('/relation/:relationId/submit-preview', async (ctx: Context) => {
     total: preview.total,
     grade: preview.grade,
     scale: preview.policy.scale,
+    group_size: preview.policy.group_size,
     projected_counts: preview.policy.counts,
     ranges: preview.policy.ranges,
     constraints: preview.policy.constraints,
