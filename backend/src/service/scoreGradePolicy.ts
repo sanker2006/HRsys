@@ -92,9 +92,9 @@ function evaluateCounts(
   counts: Record<Grade, number>,
   completed: number,
   groupSize: number,
-  scale: ScoreScale
+  scale: ScoreScale,
+  constraints: GradeConstraint[]
 ): Omit<GradePolicyResult, 'remaining_capacity'> {
-  const constraints = buildGradeConstraints(groupSize);
   const remaining = groupSize - completed;
   const ranges = gradeRanges(scale);
 
@@ -128,26 +128,61 @@ function evaluateCounts(
     };
   }
 
+  const covered = new Set(constraints.flatMap(constraint => constraint.grades));
+  const constrainedCapacity = constraints.reduce((sum, constraint) => {
+    const current = constraint.grades.reduce((count, grade) => count + counts[grade], 0);
+    return sum + Math.max(0, constraint.max - current);
+  }, 0);
+  const maximumCapacity = covered.size < GRADES.length
+    ? remaining
+    : constrainedCapacity;
+  if (maximumCapacity < remaining) {
+    return {
+      scale, group_size: groupSize, completed, remaining, counts, constraints, ranges,
+      valid: false,
+      message: `剩余 ${remaining} 人已超过全部档位可容纳人数 ${maximumCapacity} 人`,
+    };
+  }
+
   return { scale, group_size: groupSize, completed, remaining, counts, constraints, ranges, valid: true, message: null };
 }
 
-export function evaluateGradePolicy(scores: number[], groupSize: number, scale: ScoreScale): GradePolicyResult {
+export function evaluateGradePolicy(
+  scores: number[],
+  groupSize: number,
+  scale: ScoreScale,
+  configuredConstraints?: GradeConstraint[]
+): GradePolicyResult {
   if (scores.length > groupSize) throw new Error('已评分人数不能超过评价对象人数');
+  const constraints = configuredConstraints ?? buildGradeConstraints(groupSize);
   const counts = EMPTY_COUNTS();
   for (const score of scores) counts[classifyGrade(score, scale)] += 1;
-  const base = evaluateCounts(counts, scores.length, groupSize, scale);
+  const base = evaluateCounts(counts, scores.length, groupSize, scale, constraints);
   const remainingCapacity = EMPTY_COUNTS();
   for (const grade of GRADES) {
     for (let additional = 1; additional <= base.remaining; additional += 1) {
       const projected = { ...counts, [grade]: counts[grade] + additional };
-      if (!evaluateCounts(projected, scores.length + additional, groupSize, scale).valid) break;
+      if (!evaluateCounts(projected, scores.length + additional, groupSize, scale, constraints).valid) break;
       remainingCapacity[grade] = additional;
     }
   }
   return { ...base, remaining_capacity: remainingCapacity };
 }
 
-export function gradePolicyDescription(groupSize: number): string {
+export function gradePolicyDescription(groupSize: number, constraints?: GradeConstraint[]): string {
+  if (constraints) {
+    if (constraints.length === 0) return 'ABCDE各档人数均不限制';
+    const descriptions = constraints.map(constraint => {
+      if (constraint.min === constraint.max) return `${constraint.label} ${constraint.min} 人`;
+      if (constraint.min === 0) return `${constraint.label}最多 ${constraint.max} 人`;
+      if (constraint.max === groupSize) return `${constraint.label}至少 ${constraint.min} 人`;
+      return `${constraint.label} ${constraint.min}～${constraint.max} 人`;
+    });
+    const covered = new Set(constraints.flatMap(constraint => constraint.grades));
+    const unrestricted = GRADES.filter(grade => !covered.has(grade));
+    if (unrestricted.length) descriptions.push(`${unrestricted.join('、')}级不限`);
+    return descriptions.join('，');
+  }
   if (groupSize <= 3) return 'A级最多 1 人，其余等级不限';
   if (groupSize === 4) return 'A+B级 1 人，C+D级 2 人，E级 1 人';
   return 'A、B级各不超过20%，C级不超过30%，D级不少于20%，E级不少于10%';

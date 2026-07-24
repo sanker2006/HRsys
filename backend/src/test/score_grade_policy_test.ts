@@ -1,5 +1,12 @@
 import assert from 'node:assert/strict';
-import { buildGradeConstraints, classifyGrade, evaluateGradePolicy, gradeRanges } from '../service/scoreGradePolicy.js';
+import {
+  buildGradeConstraints,
+  classifyGrade,
+  evaluateGradePolicy,
+  gradePolicyDescription,
+  gradeRanges,
+  type GradeConstraint,
+} from '../service/scoreGradePolicy.js';
 
 assert.equal(classifyGrade(91, 100), 'A');
 assert.equal(classifyGrade(90.9, 100), 'B');
@@ -19,6 +26,15 @@ assert.equal(classifyGrade(18, 30), 'D');
 assert.equal(classifyGrade(17.9, 30), 'E');
 assert.equal(gradeRanges(100).A.label, '91.0～100.0');
 assert.equal(gradeRanges(30).A.label, '27.1～30.0');
+assert.equal(
+  gradePolicyDescription(6, [
+    { key: 'A', label: 'A级', grades: ['A'], min: 0, max: 1 },
+    { key: 'B', label: 'B级', grades: ['B'], min: 0, max: 1 },
+    { key: 'C', label: 'C级', grades: ['C'], min: 0, max: 1 },
+    { key: 'D', label: 'D级', grades: ['D'], min: 0, max: 2 },
+  ]),
+  'A级最多 1 人，B级最多 1 人，C级最多 1 人，D级最多 2 人，E级不限'
+);
 
 assert.deepEqual(buildGradeConstraints(4).map(item => [item.key, item.min, item.max]), [
   ['AB', 1, 1], ['CD', 2, 2], ['E', 1, 1],
@@ -38,5 +54,46 @@ assert.deepEqual(evaluateGradePolicy([95], 4, 100).remaining_capacity, {
 assert.deepEqual(evaluateGradePolicy([], 5, 100).remaining_capacity, {
   A: 1, B: 1, C: 1, D: 4, E: 4,
 });
+
+const publicWindow: GradeConstraint[] = [
+  { key: 'A', label: 'A级', grades: ['A'], min: 2, max: 2 },
+  { key: 'B', label: 'B级', grades: ['B'], min: 2, max: 2 },
+  { key: 'CD', label: 'C+D级', grades: ['C', 'D'], min: 6, max: 6 },
+  { key: 'E', label: 'E级', grades: ['E'], min: 0, max: 0 },
+];
+const publicPartial = evaluateGradePolicy(
+  [95, 92, 85, 82, 75, 75, 75, 75, 75],
+  10,
+  100,
+  publicWindow
+);
+assert.equal(publicPartial.valid, true);
+assert.equal(publicPartial.remaining_capacity.C, 1);
+assert.equal(publicPartial.remaining_capacity.D, 1);
+assert.equal(publicPartial.remaining_capacity.E, 0);
+assert.equal(
+  evaluateGradePolicy(
+    [95, 92, 85, 82, 75, 75, 75, 75, 75, 50],
+    10,
+    100,
+    publicWindow
+  ).valid,
+  false
+);
+
+const serviceDepartment: GradeConstraint[] = [
+  { key: 'A', label: 'A级', grades: ['A'], min: 0, max: 1 },
+  { key: 'B', label: 'B级', grades: ['B'], min: 0, max: 1 },
+  { key: 'C', label: 'C级', grades: ['C'], min: 0, max: 1 },
+  { key: 'D', label: 'D级', grades: ['D'], min: 0, max: 2 },
+];
+const serviceResult = evaluateGradePolicy([95, 85, 75, 65, 65], 6, 100, serviceDepartment);
+assert.equal(serviceResult.valid, true);
+assert.equal(serviceResult.remaining_capacity.E, 1);
+assert.equal(evaluateGradePolicy([95, 92], 6, 100, serviceDepartment).valid, false);
+
+const unrestricted = evaluateGradePolicy([100], 1, 100, []);
+assert.equal(unrestricted.valid, true);
+assert.deepEqual(unrestricted.constraints, []);
 
 console.log('score grade policy tests passed');

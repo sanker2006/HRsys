@@ -2,7 +2,7 @@
   <div class="page-shell">
     <header class="page-head">
       <div>
-        <div class="eyebrow">批次工作流 · 05</div>
+        <div class="eyebrow">批次工作流 · 06</div>
         <h2>领导评分</h2>
         <p>{{ batch?.name || '加载中' }} · 每位领导独立导出并完整导入评分表</p>
       </div>

@@ -195,9 +195,25 @@ function formatLocalDateTime(date) {
   ].join(':');
 }
 
-async function h5Token(phone, tail) {
-  const data = await ok('/auth/h5-login', { method: 'POST', body: { phone, idCardTail: tail } });
-  return data.token;
+const h5Tokens = new Map();
+async function h5Token(phone) {
+  if (h5Tokens.has(phone)) return h5Tokens.get(phone);
+  const login = await ok('/auth/h5-login', {
+    method: 'POST',
+    body: { phone, password: phone.slice(-4) },
+  });
+  let token = login.token;
+  if (login.must_change_password) {
+    const password = `Integration${phone.slice(-4)}A1`;
+    const changed = await ok('/auth/change-password', {
+      method: 'POST',
+      token,
+      body: { new_password: password, confirm_password: password },
+    });
+    token = changed.token;
+  }
+  h5Tokens.set(phone, token);
+  return token;
 }
 
 async function previewAndGenerate(batchId, adminToken) {
@@ -268,7 +284,7 @@ async function main() {
 
   await fail('/auth/h5-login', {
     method: 'POST',
-    body: { phone: '13800000019', idCardTail: '0019' },
+    body: { phone: '13800000019', password: '0019' },
   }, /停用/);
   await fail('/user/', {
     method: 'POST',

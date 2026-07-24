@@ -72,6 +72,15 @@ export const evalMatrixApi = {
   },
 }
 
+export const managerGradePolicyApi = {
+  list(batchId: number) {
+    return api.get(`/manager-grade-policy/${batchId}`)
+  },
+  save(batchId: number, data: any) {
+    return api.put(`/manager-grade-policy/${batchId}`, data)
+  },
+}
+
 export const relationApi = {
   list(params: { batchId: number; evaluator_id?: number; target_id?: number; eval_type?: string; status?: string; pageSize?: number }) {
     return api.get('/relation/', {

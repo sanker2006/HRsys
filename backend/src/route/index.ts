@@ -11,6 +11,7 @@ import internRoutes from './intern.js';
 import personalSummaryRoutes from './personal_summary.js';
 import leaderScoreRoutes from './leader_score.js';
 import performanceRoutes from './performance.js';
+import managerGradePolicyRoutes from './manager_grade_policy.js';
 
 const router = new Router();
 router.use(authRoutes.routes(), authRoutes.allowedMethods());
@@ -24,6 +25,7 @@ router.use(departmentRoutes.routes(), departmentRoutes.allowedMethods());
 router.use(personalSummaryRoutes.routes(), personalSummaryRoutes.allowedMethods());
 router.use(leaderScoreRoutes.routes(), leaderScoreRoutes.allowedMethods());
 router.use(performanceRoutes.routes(), performanceRoutes.allowedMethods());
+router.use(managerGradePolicyRoutes.routes(), managerGradePolicyRoutes.allowedMethods());
 for (const route of internRoutes) {
   router.use(route.routes(), route.allowedMethods());
 }

@@ -3,7 +3,7 @@
     <section class="admin-hero batch-hero">
       <div>
         <h1>批次工作流</h1>
-        <p>按“评价矩阵、题目模板、评价关系、进度监控”的顺序完成每个评比活动。</p>
+        <p>按评价范围、题目材料、分档规则、评分执行和统计归档的顺序完成每个批次。</p>
       </div>
       <div class="hero-actions">
         <el-button type="primary" size="large" @click="openCreate">新建批次</el-button>
@@ -92,16 +92,20 @@
                 <span>04</span>
                 <strong>评价关系</strong>
               </button>
-              <button type="button" class="workflow-step" @click="$router.push(`/leader-score/${row.id}`)">
+              <button type="button" class="workflow-step" @click="$router.push(`/manager-grade-policy/${row.id}`)">
                 <span>05</span>
+                <strong>分档规则</strong>
+              </button>
+              <button type="button" class="workflow-step" @click="$router.push(`/leader-score/${row.id}`)">
+                <span>06</span>
                 <strong>领导评分</strong>
               </button>
               <button type="button" class="workflow-step primary-step" @click="$router.push(`/progress/${row.id}`)">
-                <span>06</span>
+                <span>07</span>
                 <strong>进度监控</strong>
               </button>
               <button type="button" class="workflow-step stat-step" @click="$router.push(`/statistics/${row.id}`)">
-                <span>07</span>
+                <span>08</span>
                 <strong>数据统计</strong>
               </button>
             </div>
@@ -436,7 +440,7 @@ onMounted(loadBatches)
 
 .workflow-strip {
   display: grid;
-  grid-template-columns: repeat(6, minmax(108px, 1fr));
+  grid-template-columns: repeat(4, minmax(108px, 1fr));
   gap: 10px;
 }
 

@@ -12,7 +12,14 @@ if (process.env.ALLOW_AUTH_INTEGRATION_TEST !== 'true') {
 }
 
 await initDb();
+async function cleanupFixture() {
+  await execute("DELETE FROM batch WHERE name = '分档并发测试' AND period = 'test'");
+  await execute("DELETE FROM app_user WHERE employee_no IN ('M1','S1','S2','S3','S4','S5')");
+  await execute("DELETE FROM department WHERE name = '并发测试部'");
+}
+
 try {
+  await cleanupFixture();
   await execute("INSERT INTO department (name, sort_order) VALUES ('并发测试部', 1)");
   await execute(
     `INSERT INTO batch (name, period, start_time, end_time, status)
@@ -97,7 +104,35 @@ try {
   assert.equal(preview?.grade, 'E');
   assert.equal(preview?.policy.valid, true);
 
+  await execute(
+    `INSERT INTO manager_grade_policy
+      (batch_id, department, target_count, mode, constraints_json)
+     VALUES (?, '并发测试部', 5, 'custom', ?)`,
+    [batch.id, JSON.stringify([
+      { key: 'AB', label: 'A+B级', grades: ['A', 'B'], min: 1, max: 1 },
+      { key: 'CD', label: 'C+D级', grades: ['C', 'D'], min: 3, max: 3 },
+      { key: 'E', label: 'E级', grades: ['E'], min: 1, max: 1 },
+    ])]
+  );
+  const customPreview = await previewDetailedGradeSubmission(
+    previewRelation,
+    [{ seq: 1, score: 50 }]
+  );
+  assert.equal(customPreview?.policy.valid, true);
+  assert.deepEqual(customPreview?.policy.constraints.map(item => item.key), ['AB', 'CD', 'E']);
+
+  const blockedByCustomQuota = await previewDetailedGradeSubmission(
+    byTarget.get(staffIds[4]) as RelationRow,
+    [{ seq: 1, score: 95 }]
+  );
+  assert.equal(blockedByCustomQuota?.policy.valid, false);
+  assert.match(blockedByCustomQuota?.policy.message || '', /A\+B级最多 1 人/);
+
   console.log('graded submission MySQL integration tests passed');
 } finally {
-  await closeDb();
+  try {
+    await cleanupFixture();
+  } finally {
+    await closeDb();
+  }
 }

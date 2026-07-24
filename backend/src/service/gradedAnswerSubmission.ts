@@ -10,6 +10,7 @@ import {
   type ScoreScale,
 } from './scoreGradePolicy.js';
 import { lockAndValidateEvaluationDependencies } from './evaluationDependencies.js';
+import { resolveManagerGradePolicy } from './managerGradePolicy.js';
 
 export interface DetailedSubmission {
   relation: RelationRow;
@@ -19,6 +20,7 @@ export interface DetailedSubmission {
 
 interface PolicyGroup {
   key: string;
+  scene: 'staff_peer' | 'manager_downward';
   scale: ScoreScale;
   batchId: number;
   evaluatorId: number;
@@ -33,6 +35,7 @@ function policyGroupFor(relation: RelationRow): PolicyGroup | null {
   ) {
     return {
       key: `${relation.batch_id}:peer:${relation.evaluator_id}`,
+      scene: 'staff_peer',
       scale: 30,
       batchId: relation.batch_id,
       evaluatorId: relation.evaluator_id,
@@ -45,6 +48,7 @@ function policyGroupFor(relation: RelationRow): PolicyGroup | null {
   ) {
     return {
       key: `${relation.batch_id}:downward:${relation.evaluator_id}:${relation.target_department || ''}`,
+      scene: 'manager_downward',
       scale: 100,
       batchId: relation.batch_id,
       evaluatorId: relation.evaluator_id,
@@ -103,7 +107,10 @@ async function validateGroup(
     const total = totals.get(row.id);
     if (total !== undefined && Number.isFinite(total)) scores.push(total);
   }
-  return evaluateGradePolicy(scores, rows.length, group.scale);
+  const resolved = group.scene === 'manager_downward'
+    ? await resolveManagerGradePolicy(tx, group.batchId, group.department || '', rows.length)
+    : null;
+  return evaluateGradePolicy(scores, rows.length, group.scale, resolved?.constraints);
 }
 
 export async function submitDetailedItems(items: DetailedSubmission[]): Promise<void> {
@@ -137,7 +144,7 @@ export async function submitDetailedItems(items: DetailedSubmission[]): Promise<
       const result = await validateGroup(tx, group.policy, group.incoming, true);
       if (!result.valid) {
         throw Object.assign(
-          new Error(`${result.message}。本组规则：${gradePolicyDescription(result.group_size)}`),
+          new Error(`${result.message}。本组规则：${gradePolicyDescription(result.group_size, result.constraints)}`),
           { status: 409, detail: result }
         );
       }

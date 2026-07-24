@@ -78,6 +78,21 @@ CREATE TABLE IF NOT EXISTS relation (
     FOREIGN KEY (target_id) REFERENCES app_user(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS manager_grade_policy (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch_id         INTEGER NOT NULL,
+    department       TEXT NOT NULL,
+    target_count     INTEGER NOT NULL,
+    mode             TEXT NOT NULL,
+    constraints_json TEXT NOT NULL,
+    created_by       INTEGER,
+    created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (batch_id) REFERENCES batch(id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by) REFERENCES app_user(id) ON DELETE SET NULL,
+    UNIQUE(batch_id, department)
+);
+
 -- 5. self_question 自评题目表（宽表设计）
 -- 每人每批次一行，content_1~10 为题目内容，weight_1~10 为百分比权重
 -- 权重之和必须 = 1（应用层校验），每题满分 = weight × 100
