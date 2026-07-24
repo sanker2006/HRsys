@@ -13,6 +13,11 @@ function isSameLevelPeer(row: RelationRow, targetId: number): boolean {
     && row.evaluator_level === row.target_level;
 }
 
+function isUpwardToManager(row: RelationRow, targetId: number): boolean {
+  return row.target_id === targetId
+    && classifyEvaluationRelation(row).evaluation_scene === 'upward';
+}
+
 function allCompleted(rows: RelationRow[]): boolean {
   return rows.every(row => row.status === 'completed');
 }
@@ -46,6 +51,10 @@ export function validateEvaluationDependenciesFromRelations(
     }
     if (!allCompleted(incomingPeers)) {
       return { ok: false, reason: '该负责人收到的全部负责人互评完成后，领导才能评价' };
+    }
+    const incomingUpward = allRelations.filter(row => isUpwardToManager(row, relation.target_id));
+    if (!allCompleted(incomingUpward)) {
+      return { ok: false, reason: '该负责人收到的全部员工向上评价完成后，领导才能评价' };
     }
     const managerDownward = allRelations.filter(row => (
       row.evaluator_id === relation.target_id
@@ -121,6 +130,7 @@ function dependencyIds(relation: RelationRow, all: RelationRow[]): number[] {
         && (
           (row.eval_type === 'self' && row.evaluator_id === row.target_id)
           || isSameLevelPeer(row, relation.target_id)
+          || isUpwardToManager(row, relation.target_id)
           || (row.eval_type === 'downward' && row.evaluator_level === 'manager')
         )
       ) ids.add(row.id);
@@ -190,7 +200,13 @@ export async function findRevokeConsumers(
   relation: RelationRow
 ): Promise<RelationRow[]> {
   const all = await batchRelations(db, relation.batch_id);
-  if (classifyEvaluationRelation(relation).evaluation_scene === 'upward') return [];
+  if (classifyEvaluationRelation(relation).evaluation_scene === 'upward') {
+    return all.filter(row => (
+      row.target_id === relation.target_id
+      && row.eval_type === 'downward'
+      && ['main_leader', 'division_leader'].includes(row.evaluator_level || '')
+    ));
+  }
 
   if (relation.target_level === 'staff' && (relation.eval_type === 'self' || relation.eval_type === 'peer')) {
     return all.filter(row => (

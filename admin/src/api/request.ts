@@ -32,12 +32,20 @@ api.interceptors.response.use(
     }
     return payload
   },
-  err => {
+  async err => {
     if (err.response?.status === 401) {
       localStorage.removeItem('admin_token')
       location.href = `${PUBLIC_BASE}login`
     }
-    const msg = err.response?.data?.message || err.message || '网络错误'
+    let responseData = err.response?.data
+    if (responseData instanceof Blob && responseData.type.includes('application/json')) {
+      try {
+        responseData = JSON.parse(await responseData.text())
+      } catch {
+        responseData = null
+      }
+    }
+    const msg = responseData?.message || err.message || '网络错误'
     ElMessage.error(msg)
     return Promise.reject(err)
   }

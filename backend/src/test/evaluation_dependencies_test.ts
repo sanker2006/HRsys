@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import type { RelationRow } from '../model/relation.js';
-import { validateEvaluationDependenciesFromRelations } from '../service/evaluationDependencies.js';
+import {
+  findRevokeConsumers,
+  validateEvaluationDependenciesFromRelations,
+} from '../service/evaluationDependencies.js';
 
 function relation(id: number, overrides: Partial<RelationRow>): RelationRow {
   return {
@@ -114,10 +117,19 @@ const leaderToManager = relation(8, {
   evaluator_level: 'main_leader',
   target_level: 'manager',
 });
+const upward = relation(9, {
+  evaluator_id: 20,
+  target_id: 10,
+  role_type: 'staff',
+  eval_type: 'upward',
+  evaluator_level: 'staff',
+  target_level: 'manager',
+  status: 'completed',
+});
 assert.deepEqual(
   validateEvaluationDependenciesFromRelations(
     leaderToManager,
-    [managerSelf, managerPeer, { ...managerDown, status: 'completed' }, managerOther, leaderToManager]
+    [managerSelf, managerPeer, upward, { ...managerDown, status: 'completed' }, managerOther, leaderToManager]
   ),
   { ok: true }
 );
@@ -128,5 +140,18 @@ assert.equal(
   ).ok,
   false
 );
+assert.equal(
+  validateEvaluationDependenciesFromRelations(
+    leaderToManager,
+    [managerSelf, managerPeer, { ...upward, status: 'draft' }, { ...managerDown, status: 'completed' }, leaderToManager]
+  ).ok,
+  false
+);
+
+const revokeConsumers = await findRevokeConsumers(
+  { queryAll: async () => [upward, { ...leaderToManager, status: 'completed' }] },
+  upward
+);
+assert.deepEqual(revokeConsumers.map(row => row.id), [leaderToManager.id]);
 
 console.log('evaluation dependency tests passed');

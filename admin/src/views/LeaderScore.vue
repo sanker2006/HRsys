@@ -30,6 +30,14 @@
             <small>{{ row.completed }} 已完成 · {{ row.draft }} 草稿 · {{ row.pending }} 待评</small>
           </template>
         </el-table-column>
+        <el-table-column label="参考数据" min-width="190">
+          <template #default="{ row }">
+            <el-tag v-if="row.reference_ready" type="success" effect="plain">已就绪</el-tag>
+            <el-tooltip v-else :content="row.blocking_reason" placement="top">
+              <el-tag type="warning" effect="plain">尚未完成</el-tag>
+            </el-tooltip>
+          </template>
+        </el-table-column>
         <el-table-column label="最近导入" width="150" class-name="optional-column" label-class-name="optional-column">
           <template #default="{ row }">{{ row.last_import_at || '-' }}</template>
         </el-table-column>
@@ -70,13 +78,17 @@ async function load() {
   } finally { loading.value = false }
 }
 async function download(row: any) {
-  const blob: any = await answerApi.exportLeaderScore(Number(props.batchId), row.leader_id)
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = `领导评分-${batch.value?.name || props.batchId}-${row.leader_name}.xlsx`
-  anchor.click()
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
+  try {
+    const blob: any = await answerApi.exportLeaderScore(Number(props.batchId), row.leader_id)
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `领导评分-${batch.value?.name || props.batchId}-${row.leader_name}.xlsx`
+    anchor.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } catch {
+    // The shared response interceptor displays the server's concrete error.
+  }
 }
 function chooseFile(row: any) {
   selected.value = row

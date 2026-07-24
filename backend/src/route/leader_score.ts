@@ -14,15 +14,18 @@ import { BatchModel } from '../model/batch.js';
 import { RelationModel, type RelationRow } from '../model/relation.js';
 import { execute, queryOne, transaction } from '../db/query.js';
 import { fail, success } from '../utils/response.js';
+import { classifyEvaluationRelation } from '../service/evaluationScene.js';
 
 const router = new Router({ prefix: '/api/v1/answer/admin/leader-score' });
 router.use(auth, admin);
 
 type ScoreParts = { performance: number | null; comprehensive: number | null; total: number | null };
-type TemplateRow = {
+export type TemplateRow = {
   relation: RelationRow;
+  referenceStatus: string;
   managerSelf: ScoreParts | null;
   managerPeerAverage: number | null;
+  managerUpwardAverage: number | null;
   employeeSelf: ScoreParts | null;
   employeePeerAverage: number | null;
   managerScore: ScoreParts | null;
@@ -92,7 +95,7 @@ async function leaderRelations(batchId: number, leaderId?: number): Promise<Rela
   return rows.filter(row => ['main_leader', 'division_leader'].includes(row.evaluator_level || ''));
 }
 
-async function buildTemplateContext(batchId: number, leaderId: number) {
+export async function buildTemplateContext(batchId: number, leaderId: number) {
   const relations = await leaderRelations(batchId, leaderId);
   if (!relations.length) throw Object.assign(new Error('该领导在当前批次没有评价对象'), { status: 404 });
   const targetIds = new Set(relations.map(row => row.target_id));
@@ -101,6 +104,7 @@ async function buildTemplateContext(batchId: number, leaderId: number) {
     if (!targetIds.has(row.target_id)) return false;
     if (row.eval_type === 'self') return true;
     if (row.eval_type === 'peer' && row.evaluator_level === row.target_level) return true;
+    if (classifyEvaluationRelation(row).evaluation_scene === 'upward') return true;
     return row.eval_type === 'downward' && row.evaluator_level === 'manager' && row.target_level === 'staff';
   });
   const answerRelations = [...relations, ...referenceRelations];
@@ -110,18 +114,44 @@ async function buildTemplateContext(batchId: number, leaderId: number) {
     if (!answersMap.has(answer.relation_id)) answersMap.set(answer.relation_id, []);
     answersMap.get(answer.relation_id)!.push(answer);
   }
+  const rows = buildLeaderTemplateRows(relations, referenceRelations, answersMap, allRelations);
+  return { relations, rows, answersMap, referenceRelations, referenceFingerprint: computeReferenceFingerprint(referenceRelations, answersMap) };
+}
+
+export function buildLeaderTemplateRows(
+  relations: RelationRow[],
+  referenceRelations: RelationRow[],
+  answersMap: Map<number, AnswerRow[]>,
+  allRelations: RelationRow[]
+): TemplateRow[] {
   const completedParts = (relation: RelationRow | undefined): ScoreParts | null => (
     relation?.status === 'completed' ? scoreParts(answersMap.get(relation.id) || []) : null
   );
-  const rows: TemplateRow[] = relations.map(relation => {
+  const completedAverage = (items: RelationRow[]): number | null => {
+    if (!items.length || items.some(item => item.status !== 'completed')) return null;
+    const totals = items.map(item => completedParts(item)?.total ?? null);
+    return totals.some(total => total === null) ? null : average(totals);
+  };
+  return relations.map(relation => {
     const self = referenceRelations.find(row => row.eval_type === 'self' && row.target_id === relation.target_id);
-    const peers = referenceRelations.filter(row => row.eval_type === 'peer' && row.target_id === relation.target_id && row.status === 'completed');
+    const peers = referenceRelations.filter(row => (
+      row.eval_type === 'peer'
+      && row.target_id === relation.target_id
+      && row.evaluator_level === row.target_level
+    ));
     const manager = referenceRelations.find(row => row.eval_type === 'downward' && row.target_id === relation.target_id && row.evaluator_level === 'manager');
+    const upward = referenceRelations.filter(row => (
+      row.target_id === relation.target_id
+      && classifyEvaluationRelation(row).evaluation_scene === 'upward'
+    ));
+    const dependency = validateEvaluationDependenciesFromRelations(relation, allRelations);
     if (relation.target_level === 'manager') {
       return {
         relation,
+        referenceStatus: dependency.ok ? '已就绪' : dependency.reason || '参考评价未完成',
         managerSelf: completedParts(self),
-        managerPeerAverage: average(peers.map(row => completedParts(row)?.total ?? null)),
+        managerPeerAverage: completedAverage(peers),
+        managerUpwardAverage: completedAverage(upward),
         employeeSelf: null,
         employeePeerAverage: null,
         managerScore: null,
@@ -129,14 +159,15 @@ async function buildTemplateContext(batchId: number, leaderId: number) {
     }
     return {
       relation,
+      referenceStatus: dependency.ok ? '已就绪' : dependency.reason || '参考评价未完成',
       managerSelf: null,
       managerPeerAverage: null,
+      managerUpwardAverage: null,
       employeeSelf: completedParts(self),
-      employeePeerAverage: average(peers.map(row => completedParts(row)?.total ?? null)),
+      employeePeerAverage: completedAverage(peers),
       managerScore: completedParts(manager),
     };
   });
-  return { relations, rows, answersMap, referenceRelations, referenceFingerprint: computeReferenceFingerprint(referenceRelations, answersMap) };
 }
 
 export function addTemplateSheet(workbook: ExcelJS.Workbook, rows: TemplateRow[], batchId: number, leaderId: number, fingerprint: string) {
@@ -150,9 +181,11 @@ export function addTemplateSheet(workbook: ExcelJS.Workbook, rows: TemplateRow[]
     { header: '姓名', key: 'name', width: 14 },
     { header: '部门', key: 'department', width: 20 },
     { header: '角色', key: 'role', width: 14 },
+    { header: '参考数据状态', key: 'reference_status', width: 38 },
     { header: '主管自评业绩', key: 'manager_self_performance', width: 16 },
     { header: '主管自评综合', key: 'manager_self_comprehensive', width: 16 },
     { header: '主管互评平均分', key: 'manager_peer_average', width: 17 },
+    { header: '员工向上评价平均分', key: 'manager_upward_average', width: 21 },
     { header: '员工自评业绩', key: 'employee_self_performance', width: 16 },
     { header: '员工自评综合', key: 'employee_self_comprehensive', width: 16 },
     { header: '员工互评平均分', key: 'employee_peer_average', width: 17 },
@@ -171,9 +204,11 @@ export function addTemplateSheet(workbook: ExcelJS.Workbook, rows: TemplateRow[]
       name: row.relation.target_name,
       department: row.relation.target_department,
       role: roleLabel(row.relation.target_level),
+      reference_status: row.referenceStatus,
       manager_self_performance: row.managerSelf?.performance ?? '',
       manager_self_comprehensive: row.managerSelf?.comprehensive ?? '',
       manager_peer_average: row.managerPeerAverage ?? '',
+      manager_upward_average: row.managerUpwardAverage ?? '',
       employee_self_performance: row.employeeSelf?.performance ?? '',
       employee_self_comprehensive: row.employeeSelf?.comprehensive ?? '',
       employee_peer_average: row.employeePeerAverage ?? '',
@@ -186,9 +221,9 @@ export function addTemplateSheet(workbook: ExcelJS.Workbook, rows: TemplateRow[]
   sheet.views = [{ state: 'frozen', ySplit: 1 }];
   sheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
   sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF036486' } };
-  sheet.autoFilter = { from: 'E1', to: 'R1' };
-  sheet.getColumn(17).eachCell((cell, rowNumber) => { if (rowNumber > 1) cell.dataValidation = { type: 'decimal', operator: 'between', formulae: [0, 70] }; });
-  sheet.getColumn(18).eachCell((cell, rowNumber) => { if (rowNumber > 1) cell.dataValidation = { type: 'decimal', operator: 'between', formulae: [0, 30] }; });
+  sheet.autoFilter = { from: 'E1', to: 'T1' };
+  sheet.getColumn(19).eachCell((cell, rowNumber) => { if (rowNumber > 1) cell.dataValidation = { type: 'decimal', operator: 'between', formulae: [0, 70] }; });
+  sheet.getColumn(20).eachCell((cell, rowNumber) => { if (rowNumber > 1) cell.dataValidation = { type: 'decimal', operator: 'between', formulae: [0, 30] }; });
 }
 
 export function parseLeaderScoreSheet(
@@ -202,7 +237,7 @@ export function parseLeaderScoreSheet(
   const seen = new Set<number>();
   for (let rowNumber = 2; rowNumber <= sheet.rowCount; rowNumber += 1) {
     const row = sheet.getRow(rowNumber);
-    const populated = Array.from({ length: 18 }, (_, index) => row.getCell(index + 1).value)
+    const populated = Array.from({ length: 20 }, (_, index) => row.getCell(index + 1).value)
       .some(value => value !== null && value !== undefined && value !== '');
     if (!populated) continue;
     const relationId = Number(row.getCell(1).value);
@@ -219,8 +254,8 @@ export function parseLeaderScoreSheet(
       throw Object.assign(new Error(`第${rowNumber}行身份或参考数据校验失败`), { status: 400 });
     }
     if (seen.has(relationId)) throw Object.assign(new Error(`第${rowNumber}行关系重复`), { status: 400 });
-    const performanceValue = row.getCell(17).value;
-    const comprehensiveValue = row.getCell(18).value;
+    const performanceValue = row.getCell(19).value;
+    const comprehensiveValue = row.getCell(20).value;
     if (performanceValue === null || performanceValue === undefined || performanceValue === '') {
       throw Object.assign(new Error(`第${rowNumber}行领导业绩评分不能为空`), { status: 400 });
     }
@@ -275,6 +310,7 @@ router.get('/:batchId', async (ctx: Context) => {
   const batch = await BatchModel.findById(batchId);
   if (!batch) return fail(ctx, '批次不存在', -1, 404);
   const rows = await leaderRelations(batchId);
+  const allRelations = await RelationModel.findByBatchId(batchId);
   const grouped = new Map<number, RelationRow[]>();
   for (const row of rows) {
     if (!grouped.has(row.evaluator_id)) grouped.set(row.evaluator_id, []);
@@ -282,6 +318,12 @@ router.get('/:batchId', async (ctx: Context) => {
   }
   const list = await Promise.all([...grouped.values()].map(async relations => {
     const leaderId = relations[0].evaluator_id;
+    const blockedRelation = relations.find(relation => (
+      !validateEvaluationDependenciesFromRelations(relation, allRelations).ok
+    ));
+    const blockedGate = blockedRelation
+      ? validateEvaluationDependenciesFromRelations(blockedRelation, allRelations)
+      : null;
     const latestImport = await queryOne<{ created_at: string }>(
       `SELECT created_at FROM log
        WHERE action = 'leader_score.import'
@@ -299,6 +341,10 @@ router.get('/:batchId', async (ctx: Context) => {
       completed: relations.filter(row => row.status === 'completed').length,
       draft: relations.filter(row => row.status === 'draft').length,
       pending: relations.filter(row => row.status === 'pending').length,
+      reference_ready: !blockedRelation,
+      blocking_reason: blockedRelation && blockedGate
+        ? `${blockedRelation.target_name}：${blockedGate.reason || '参考评价未完成'}`
+        : null,
       updated_at: relations.map(row => row.updated_at).sort().at(-1),
       last_import_at: latestImport?.created_at ?? null,
     };
@@ -312,8 +358,6 @@ router.get('/:batchId/:leaderId/export', async (ctx: Context) => {
   const batch = await BatchModel.findById(batchId);
   if (!batch) return fail(ctx, '批次不存在', -1, 404);
   const context = await buildTemplateContext(batchId, leaderId);
-  const prerequisiteError = await validateLeaderPrerequisites(batchId, context.relations);
-  if (prerequisiteError) return fail(ctx, prerequisiteError, -1, 409);
   const workbook = new ExcelJS.Workbook();
   addTemplateSheet(workbook, context.rows, batchId, leaderId, context.referenceFingerprint);
   const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
