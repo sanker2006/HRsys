@@ -128,6 +128,56 @@ try {
   assert.equal(blockedByCustomQuota?.policy.valid, false);
   assert.match(blockedByCustomQuota?.policy.message || '', /A\+B级最多 1 人/);
 
+  for (const evaluatorId of staffIds) {
+    for (const targetId of staffIds) {
+      if (evaluatorId === targetId) continue;
+      await execute(
+        `INSERT IGNORE INTO relation
+          (batch_id, evaluator_id, target_id, role_type, eval_type, status)
+         VALUES (?, ?, ?, 'staff', 'peer', 'pending')`,
+        [batch.id, evaluatorId, targetId]
+      );
+    }
+  }
+  await execute(
+    `INSERT INTO staff_peer_grade_policy
+      (batch_id, department, target_count, mode, constraints_json)
+     VALUES (?, '并发测试部', 4, 'custom', ?)`,
+    [batch.id, JSON.stringify([
+      { key: 'AB', label: 'A+B级', grades: ['A', 'B'], min: 1, max: 1 },
+      { key: 'CD', label: 'C+D级', grades: ['C', 'D'], min: 2, max: 2 },
+      { key: 'E', label: 'E级', grades: ['E'], min: 1, max: 1 },
+    ])]
+  );
+  const firstStaffPeers = await RelationModel.findByBatchId(batch.id, {
+    evaluator_id: staffIds[0],
+    eval_type: 'peer',
+  });
+  const secondStaffPeers = await RelationModel.findByBatchId(batch.id, {
+    evaluator_id: staffIds[1],
+    eval_type: 'peer',
+  });
+  assert.equal(firstStaffPeers.length, 4);
+  const staffPreview = await previewDetailedGradeSubmission(
+    firstStaffPeers[0],
+    [{ seq: 101, score: 29 }]
+  );
+  assert.deepEqual(staffPreview?.policy.constraints.map(item => item.key), ['AB', 'CD', 'E']);
+  assert.equal(staffPreview?.policy.valid, true);
+
+  await submitDetailedItems([
+    { relation: firstStaffPeers[0], answers: [{ seq: 101, score: 29 }], draft: false },
+  ]);
+  await submitDetailedItems([
+    { relation: secondStaffPeers[0], answers: [{ seq: 101, score: 29 }], draft: false },
+  ]);
+  await assert.rejects(
+    submitDetailedItems([
+      { relation: firstStaffPeers[1], answers: [{ seq: 101, score: 29 }], draft: false },
+    ]),
+    (error: any) => error?.status === 409 && /A\+B级最多 1 人/.test(error.message)
+  );
+
   console.log('graded submission MySQL integration tests passed');
 } finally {
   try {

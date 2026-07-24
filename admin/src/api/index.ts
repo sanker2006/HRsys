@@ -81,6 +81,15 @@ export const managerGradePolicyApi = {
   },
 }
 
+export const staffPeerGradePolicyApi = {
+  list(batchId: number) {
+    return api.get(`/staff-peer-grade-policy/${batchId}`)
+  },
+  save(batchId: number, data: any) {
+    return api.put(`/staff-peer-grade-policy/${batchId}`, data)
+  },
+}
+
 export const relationApi = {
   list(params: { batchId: number; evaluator_id?: number; target_id?: number; eval_type?: string; status?: string; pageSize?: number }) {
     return api.get('/relation/', {

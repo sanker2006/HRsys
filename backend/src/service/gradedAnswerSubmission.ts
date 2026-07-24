@@ -11,6 +11,7 @@ import {
 } from './scoreGradePolicy.js';
 import { lockAndValidateEvaluationDependencies } from './evaluationDependencies.js';
 import { resolveManagerGradePolicy } from './managerGradePolicy.js';
+import { resolveStaffPeerGradePolicy } from './staffPeerGradePolicy.js';
 
 export interface DetailedSubmission {
   relation: RelationRow;
@@ -39,6 +40,7 @@ function policyGroupFor(relation: RelationRow): PolicyGroup | null {
       scale: 30,
       batchId: relation.batch_id,
       evaluatorId: relation.evaluator_id,
+      department: relation.evaluator_department || relation.target_department || '',
     };
   }
   if (
@@ -109,7 +111,7 @@ async function validateGroup(
   }
   const resolved = group.scene === 'manager_downward'
     ? await resolveManagerGradePolicy(tx, group.batchId, group.department || '', rows.length)
-    : null;
+    : await resolveStaffPeerGradePolicy(tx, group.batchId, group.department || '', rows.length);
   return evaluateGradePolicy(scores, rows.length, group.scale, resolved?.constraints);
 }
 

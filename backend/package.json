@@ -22,6 +22,7 @@
     "test:evaluation-scene": "tsx src/test/evaluation_scene_test.ts",
     "test:score-grade-policy": "tsx src/test/score_grade_policy_test.ts",
     "test:manager-grade-policy": "tsx src/test/manager_grade_policy_test.ts",
+    "test:staff-peer-grade-policy": "tsx src/test/staff_peer_grade_policy_test.ts",
     "test:leader-score-template": "tsx src/test/leader_score_template_test.ts",
     "test:answer-read-context": "tsx src/test/answer_read_context_test.ts",
     "test:evaluation-dependencies": "tsx src/test/evaluation_dependencies_test.ts",

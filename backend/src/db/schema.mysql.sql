@@ -98,6 +98,21 @@ CREATE TABLE IF NOT EXISTS manager_grade_policy (
     UNIQUE KEY idx_manager_grade_policy_batch_department (batch_id, department)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS staff_peer_grade_policy (
+    id               INT AUTO_INCREMENT PRIMARY KEY,
+    batch_id         INT NOT NULL,
+    department       VARCHAR(255) NOT NULL,
+    target_count     INT NOT NULL,
+    mode             VARCHAR(32) NOT NULL,
+    constraints_json TEXT NOT NULL,
+    created_by       INT NULL,
+    created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_staff_peer_grade_policy_batch FOREIGN KEY (batch_id) REFERENCES batch(id) ON DELETE CASCADE,
+    CONSTRAINT fk_staff_peer_grade_policy_creator FOREIGN KEY (created_by) REFERENCES app_user(id) ON DELETE SET NULL,
+    UNIQUE KEY idx_staff_peer_grade_policy_batch_department (batch_id, department)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS self_question (
     id          INT AUTO_INCREMENT PRIMARY KEY,
     batch_id    INT NOT NULL,
