@@ -38,6 +38,18 @@ const rows: RelationFilterRow[] = [
     eval_type: 'self',
     status: 'completed',
   },
+  {
+    evaluator_id: 4,
+    evaluator_name: '丁',
+    evaluator_department: '综合部',
+    evaluator_level: 'staff',
+    target_id: 14,
+    target_name: '负责人',
+    target_department: '综合部',
+    target_level: 'manager',
+    eval_type: 'peer',
+    status: 'pending',
+  },
 ]
 
 describe('relation filters', () => {
@@ -51,6 +63,11 @@ describe('relation filters', () => {
       statuses: ['draft'],
       evaluatorDepartments: ['研发部', '综合部'],
     })).toEqual([rows[1]])
+  })
+
+  it('classifies legacy staff-to-manager peer relations as upward', () => {
+    expect(filterRelationRows(rows, { evalTypes: ['upward'] })).toEqual([rows[3]])
+    expect(filterRelationRows(rows, { evalTypes: ['peer'] })).toEqual([rows[0]])
   })
 
   it('keeps people with the same name as separate ID options', () => {

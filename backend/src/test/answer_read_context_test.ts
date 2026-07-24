@@ -84,6 +84,21 @@ assert.equal(questionContext?.performance_questions[0].self_score, 60);
 assert.equal(questionContext?.references.length, 1);
 assert.equal(questionContext?.references[0].source_relation_id, selfRelation.id);
 
+for (const evalType of ['peer', 'upward'] as const) {
+  const upwardRelation = relation({
+    id: evalType === 'peer' ? 40 : 41,
+    role_type: 'staff',
+    eval_type: evalType,
+    evaluator_level: 'staff',
+    target_level: 'manager',
+  });
+  const upwardContext = buildQuestionContextFromReadContext(upwardRelation, context);
+  assert.equal(upwardContext?.performance_questions.length, 0);
+  assert.equal(upwardContext?.comprehensive_questions.length, 1);
+  assert.deepEqual(upwardContext?.questions, upwardContext?.comprehensive_questions);
+  assert.deepEqual(canEvaluateFromContext(upwardRelation, context), { ok: true });
+}
+
 async function assertFixedDependencyCalls(size: number) {
   const calls: string[] = [];
   const relations = Array.from({ length: size }, (_, index) => relation({

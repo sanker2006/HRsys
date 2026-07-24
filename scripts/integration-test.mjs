@@ -326,7 +326,8 @@ async function main() {
 
   const { result: gen } = await previewAndGenerate(batch.id, adminToken);
   assert.equal(gen.self, 6);
-  assert.equal(gen.peer, 12);
+  assert.equal(gen.peer, 8);
+  assert.equal(gen.upward, 4);
   assert.equal(gen.downward, 14);
   await ok(`/batch/${batch.id}/start`, { method: 'POST', token: adminToken });
 
@@ -336,8 +337,8 @@ async function main() {
   assert.equal(relations.filter(r => r.evaluator_name === '分管A' && r.target_department === '销售部').length, 0);
   assert.equal(relations.filter(r => r.evaluator_name === '主领导' && r.eval_type === 'downward').length, 6);
 
-  assert(relations.some(r => r.eval_type === 'peer' && r.evaluator_level === 'staff' && r.target_level === 'manager' && r.evaluator_department === r.target_department), 'staff to own manager peer relation exists');
-  assert.equal(relations.some(r => r.eval_type === 'peer' && r.evaluator_level === 'staff' && r.target_level === 'manager' && r.evaluator_department !== r.target_department), false);
+  assert(relations.some(r => r.eval_type === 'upward' && r.evaluator_level === 'staff' && r.target_level === 'manager' && r.evaluator_department === r.target_department), 'staff to own manager upward relation exists');
+  assert.equal(relations.some(r => r.eval_type === 'upward' && r.evaluator_level === 'staff' && r.target_level === 'manager' && r.evaluator_department !== r.target_department), false);
 
   const staff1Token = await h5Token('13800000005', '0005');
   const staff2Token = await h5Token('13800000006', '0006');
@@ -351,8 +352,8 @@ async function main() {
   const staff1Relations = await ok(`/relation/my?batch_id=${batch.id}`, { token: staff1Token });
   const peerToStaff2 = staff1Relations.list.find(r => r.eval_type === 'peer' && r.target_name === '研发员工2');
   assert(peerToStaff2, 'staff peer relation exists');
-  const peerToOwnManager = staff1Relations.list.find(r => r.eval_type === 'peer' && r.target_level === 'manager' && r.target_department === r.evaluator_department);
-  assert(peerToOwnManager, 'staff peer relation to own manager exists');
+  const upwardToOwnManager = staff1Relations.list.find(r => r.evaluation_scene === 'upward' && r.target_level === 'manager' && r.target_department === r.evaluator_department);
+  assert(upwardToOwnManager, 'staff upward relation to own manager exists');
 
   const summaryBytes = Buffer.concat([
     Buffer.from([0x50, 0x4b, 0x03, 0x04]),
@@ -385,7 +386,7 @@ async function main() {
   await ok('/answer/detail', {
     method: 'POST',
     token: staff1Token,
-    body: { relation_id: peerToOwnManager.id, answers: peerAnswers(0.85), draft: false },
+    body: { relation_id: upwardToOwnManager.id, answers: peerAnswers(0.85), draft: false },
   });
   await fail('/answer/total', {
     method: 'POST',
@@ -767,7 +768,7 @@ async function main() {
 
   const multiStaffToken = await h5Token('13800000014', '0014');
   const multiStaffRelations = await ok(`/relation/my?batch_id=${batch.id}`, { token: multiStaffToken });
-  assert.equal(multiStaffRelations.list.some(row => row.eval_type === 'peer' && row.target_id === newManager.id), false);
+  assert.equal(multiStaffRelations.list.some(row => row.evaluation_scene === 'upward' && row.target_id === newManager.id), false);
   const managerRelationsAfterScope = await ok(`/relation/my?batch_id=${batch.id}`, { token: newManagerToken });
   assert(
     managerRelationsAfterScope.list.some(row => row.eval_type === 'downward' && row.target_id === multiDepartmentStaff.id),

@@ -65,7 +65,8 @@
           <div class="score-line">
             <span v-if="props.type === 'downward'">自评 {{ formatScore(item.self_total) }}</span>
             <span v-if="props.type === 'downward' && item.target_level === 'staff'">主管 {{ formatScore(item.manager_total) }}</span>
-            <span v-if="props.type !== 'downward'">互评 {{ formatScore(item.totalScore) }}</span>
+            <span v-if="props.type === 'peer'">互评 {{ formatScore(item.totalScore) }}</span>
+            <span v-if="props.type === 'upward'">评议 {{ formatScore(item.totalScore) }}</span>
           </div>
           <div v-if="props.type === 'downward' && !item.can_submit && item.status !== 'completed'" class="blocked-reason">
             {{ item.blocked_reason || '暂不可评价' }}
@@ -79,7 +80,7 @@
 
     <van-empty
       v-if="!loading && !showDepartmentList && visibleList.length === 0"
-      :description="props.type === 'downward' ? '暂无向下评价对象' : '暂无同级互评对象'"
+      :description="emptyDescription"
     />
   </div>
 </template>
@@ -91,18 +92,20 @@ import { useRouter } from 'vue-router'
 import { h5Api } from '../api'
 import GradePolicyPanel from '../components/GradePolicyPanel.vue'
 import { preloadEvaluationView, preloadWhenIdle } from '../router/loaders'
+import { evaluationPath, evaluationScene } from '../utils/relationScene'
 
 const props = defineProps<{ batchId: string; type: string }>()
 const router = useRouter()
 
 const loading = ref(false)
-const peerList = ref<any[]>([])
+const sceneList = ref<any[]>([])
 const downwardList = ref<any[]>([])
 const quota = ref<any>(null)
 const selectedDepartment = ref('')
 
-const pageTitle = computed(() => props.type === 'downward' ? '向下评价' : '同级互评')
-const currentList = computed(() => props.type === 'downward' ? downwardList.value : peerList.value)
+const pageTitle = computed(() => props.type === 'downward' ? '向下评价' : props.type === 'upward' ? '向上评价' : '同级互评')
+const emptyDescription = computed(() => `暂无${pageTitle.value}对象`)
+const currentList = computed(() => props.type === 'downward' ? downwardList.value : sceneList.value)
 const isLeaderDownward = computed(() => (
   props.type === 'downward' &&
   downwardList.value.some(item => ['main_leader', 'division_leader'].includes(item.evaluator_level))
@@ -185,7 +188,7 @@ function openPerson(item: any) {
     return
   }
   void preloadEvaluationView('peer-detail')
-  router.push(`/peer-eval/${props.batchId}/${item.id}`)
+  router.push(evaluationPath(item, props.batchId))
 }
 
 function handleBack() {
@@ -208,7 +211,7 @@ async function loadData() {
       }
     } else {
       const res: any = await h5Api.getMyRelations(Number(props.batchId))
-      peerList.value = (res.data?.list || []).filter((r: any) => r.eval_type === 'peer')
+      sceneList.value = (res.data?.list || []).filter((r: any) => evaluationScene(r) === props.type)
     }
   } finally {
     loading.value = false

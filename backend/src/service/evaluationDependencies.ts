@@ -1,5 +1,6 @@
 import type { DbExecutor } from '../db/query.js';
 import type { RelationRow } from '../model/relation.js';
+import { classifyEvaluationRelation } from './evaluationScene.js';
 
 export interface DependencyGate {
   ok: boolean;
@@ -189,11 +190,7 @@ export async function findRevokeConsumers(
   relation: RelationRow
 ): Promise<RelationRow[]> {
   const all = await batchRelations(db, relation.batch_id);
-  if (
-    relation.eval_type === 'peer'
-    && relation.evaluator_level === 'staff'
-    && relation.target_level === 'manager'
-  ) return [];
+  if (classifyEvaluationRelation(relation).evaluation_scene === 'upward') return [];
 
   if (relation.target_level === 'staff' && (relation.eval_type === 'self' || relation.eval_type === 'peer')) {
     return all.filter(row => (
@@ -202,7 +199,10 @@ export async function findRevokeConsumers(
       && row.evaluator_level === 'manager'
     ));
   }
-  if (relation.target_level === 'manager' && (relation.eval_type === 'self' || relation.eval_type === 'peer')) {
+  if (
+    relation.target_level === 'manager'
+    && (relation.eval_type === 'self' || classifyEvaluationRelation(relation).evaluation_scene === 'peer')
+  ) {
     return all.filter(row => (
       row.target_id === relation.target_id
       && row.eval_type === 'downward'

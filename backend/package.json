@@ -19,6 +19,7 @@
     "test:self-question-policy": "tsx src/test/self_question_policy_test.ts",
     "test:managed-departments": "tsx src/test/managed_departments_test.ts",
     "test:relation-policy": "tsx src/test/relation_policy_test.ts",
+    "test:evaluation-scene": "tsx src/test/evaluation_scene_test.ts",
     "test:score-grade-policy": "tsx src/test/score_grade_policy_test.ts",
     "test:leader-score-template": "tsx src/test/leader_score_template_test.ts",
     "test:answer-read-context": "tsx src/test/answer_read_context_test.ts",
@@ -30,7 +31,9 @@
     "auth:preflight": "tsx src/tools/migrate-h5-password-auth.ts",
     "auth:apply": "tsx src/tools/migrate-h5-password-auth.ts --apply",
     "abcde:preflight": "tsx src/tools/migrate-abcde-policy.ts",
-    "abcde:apply": "tsx src/tools/migrate-abcde-policy.ts --apply"
+    "abcde:apply": "tsx src/tools/migrate-abcde-policy.ts --apply",
+    "upward:preflight": "tsx src/tools/migrate-upward-relations.ts",
+    "upward:apply": "tsx src/tools/migrate-upward-relations.ts --apply"
   },
   "dependencies": {
     "@koa/cors": "^5.0.0",

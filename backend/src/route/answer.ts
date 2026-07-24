@@ -25,6 +25,10 @@ import {
   findRevokeConsumers,
   lockAndValidateEvaluationDependencies,
 } from '../service/evaluationDependencies.js';
+import {
+  classifyEvaluationRelation,
+  withEvaluationCapabilities,
+} from '../service/evaluationScene.js';
 
 const router = new Router({ prefix: '/api/v1/answer' });
 
@@ -66,7 +70,9 @@ async function questionSetForRelation(relation: RelationRow): Promise<QuestionIt
   const sq = await SelfQuestionModel.findByBatchAndUser(relation.batch_id, relation.target_id);
   if (!sq) return [];
   const exportRow = SelfQuestionModel.toExportFormat([sq])[0];
-  if (relation.eval_type === 'peer') return exportRow.comprehensive_questions;
+  if (classifyEvaluationRelation(relation).answer_mode === 'comprehensive_detailed') {
+    return exportRow.comprehensive_questions;
+  }
   if (isLeaderTotalRelation(relation)) return [];
   return exportRow.questions;
 }
@@ -171,6 +177,7 @@ function buildRelationSummary(relation: RelationRow, readContext: EvaluationRead
   const context = buildQuestionContextFromReadContext(relation, readContext);
   const gate = canEvaluateFromContext(relation, readContext);
   return {
+    ...classifyEvaluationRelation(relation),
     id: relation.id,
     batch_id: relation.batch_id,
     evaluator_id: relation.evaluator_id,
@@ -227,12 +234,13 @@ router.get('/relation/:relationId', async (ctx: Context) => {
   ]);
   const context = buildQuestionContextFromReadContext(relation, readContext);
   const gate = canEvaluateFromContext(relation, readContext);
-  const mode = isLeaderTotalRelation(relation) ? 'leader_totals' : 'detail';
+  const capabilities = classifyEvaluationRelation(relation);
+  const mode = capabilities.answer_mode === 'leader_totals' ? 'leader_totals' : 'detail';
   const performanceTotal = answers.find(a => a.question_seq === LEADER_PERFORMANCE_SEQ)?.score ?? null;
   const comprehensiveTotal = answers.find(a => a.question_seq === LEADER_COMPREHENSIVE_SEQ)?.score
     ?? (isLeaderTotalRelation(relation) && performanceTotal === null ? totalOfAnswers(answers) : null);
   success(ctx, {
-    relation,
+    relation: withEvaluationCapabilities(relation),
     answers,
     questions: context?.questions ?? [],
     performance_questions: context?.performance_questions ?? [],
@@ -261,16 +269,9 @@ router.post('/relation/:relationId/submit-preview', async (ctx: Context) => {
   if (!relation) return fail(ctx, '评价关系不存在', -1, 404);
   if (relation.evaluator_id !== userId) return fail(ctx, '无权操作此评价', -1, 403);
   if (relation.status === 'completed') return fail(ctx, '该评价已正式提交', -1, 409);
-  const gradedRelation = (
-    relation.eval_type === 'peer'
-    && relation.evaluator_level === 'staff'
-    && relation.target_level === 'staff'
-  ) || (
-    relation.eval_type === 'downward'
-    && relation.evaluator_level === 'manager'
-    && relation.target_level === 'staff'
-  );
-  if (!gradedRelation) return fail(ctx, '该评价关系不适用ABCDE提交预演', -1, 400);
+  if (!classifyEvaluationRelation(relation).requires_grade_preview) {
+    return fail(ctx, '该评价关系不适用ABCDE提交预演', -1, 400);
+  }
   const answers = (ctx.request.body as any)?.answers;
   if (!Array.isArray(answers)) return fail(ctx, 'answers 必须是数组', -1, 400);
   const batchGate = await canSubmitForBatch(relation.batch_id);
@@ -493,10 +494,11 @@ router.get('/progress/:batchId', async (ctx: Context) => {
   const relations = await RelationModel.findByEvaluator(batchId, userId);
   const grouped: Record<string, { total: number; completed: number; draft: number }> = {};
   for (const r of relations) {
-    if (!grouped[r.eval_type]) grouped[r.eval_type] = { total: 0, completed: 0, draft: 0 };
-    grouped[r.eval_type].total++;
-    if (r.status === 'completed') grouped[r.eval_type].completed++;
-    else if (r.status === 'draft') grouped[r.eval_type].draft++;
+    const scene = classifyEvaluationRelation(r).evaluation_scene;
+    if (!grouped[scene]) grouped[scene] = { total: 0, completed: 0, draft: 0 };
+    grouped[scene].total++;
+    if (r.status === 'completed') grouped[scene].completed++;
+    else if (r.status === 'draft') grouped[scene].draft++;
   }
   const total = relations.length;
   const completed = relations.filter(r => r.status === 'completed').length;
@@ -508,12 +510,13 @@ router.get('/admin/progress/:batchId', auth, async (ctx: Context) => {
   if (!(ctx.state as any).isAdmin) return fail(ctx, '无权访问', -1, 403);
   const batch = await BatchModel.findById(batchId);
   if (!batch) return fail(ctx, '批次不存在', -1, 404);
-  const [selfRels, peerRels, downwardRels] = await Promise.all([
+  const [selfRels, peerRels, upwardRels, downwardRels] = await Promise.all([
     RelationModel.findByBatchId(batchId, { eval_type: 'self' }),
     RelationModel.findByBatchId(batchId, { eval_type: 'peer' }),
+    RelationModel.findByBatchId(batchId, { eval_type: 'upward' }),
     RelationModel.findByBatchId(batchId, { eval_type: 'downward' }),
   ]);
-  const allIds = [...selfRels, ...peerRels, ...downwardRels].map(r => r.id);
+  const allIds = [...selfRels, ...peerRels, ...upwardRels, ...downwardRels].map(r => r.id);
   const totalsByRelation = await AnswerModel.findTotalsByRelationIds(allIds);
   const buildList = (rows: RelationRow[]) => rows.map(r => ({
     id: r.id,
@@ -538,6 +541,7 @@ router.get('/admin/progress/:batchId', auth, async (ctx: Context) => {
     batch,
     self: { stats: stat(selfRels), list: buildList(selfRels) },
     peer: { stats: stat(peerRels), list: buildList(peerRels) },
+    upward: { stats: stat(upwardRels), list: buildList(upwardRels) },
     downward: { stats: stat(downwardRels), list: buildList(downwardRels) },
   });
 });

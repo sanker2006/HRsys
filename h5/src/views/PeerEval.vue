@@ -3,7 +3,7 @@
     <EvaluationStickyHeader :title="targetName" @back="router.back()">
       <section v-if="relation" class="score-dock">
         <div>
-          <div class="dock-kicker">同级互评 · 综合评价</div>
+          <div class="dock-kicker">{{ sceneTitle }} · 综合评价</div>
           <div class="dock-title">{{ targetName }}</div>
           <div class="dock-meta">{{ relation.target_department }} · {{ relation.target_position || roleText(relation.target_level) }}</div>
         </div>
@@ -51,16 +51,18 @@
 <script setup lang="ts">
 import { closeToast, showConfirmDialog, showDialog, showLoadingToast, showToast } from 'vant'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { h5Api } from '../api'
 import PersonalSummaryDownload from '../components/PersonalSummaryDownload.vue'
 import GradePolicyPanel from '../components/GradePolicyPanel.vue'
 import EvaluationStickyHeader from '../components/EvaluationStickyHeader.vue'
 import { reportClientPerformance } from '../utils/performance'
 import { gradeBlockedMessage, gradeConfirmMessage } from '../utils/gradePreview'
+import { evaluationPath, evaluationScene, requiresGradePreview, sceneLabel } from '../utils/relationScene'
 
 const props = defineProps<{ batchId: string; relationId: string }>()
 const router = useRouter()
+const route = useRoute()
 
 const loading = ref(false)
 const relation = ref<any>(null)
@@ -76,7 +78,11 @@ const revoking = ref(false)
 const savedSnapshot = ref('')
 let listPromise: Promise<void> | null = null
 
-const targetName = computed(() => relation.value?.target_name || '同级互评')
+const scene = computed(() => relation.value
+  ? evaluationScene(relation.value)
+  : route.name === 'UpwardEval' ? 'upward' : 'peer')
+const sceneTitle = computed(() => sceneLabel(scene.value))
+const targetName = computed(() => relation.value?.target_name || sceneTitle.value)
 const isCompleted = computed(() => relation.value?.status === 'completed')
 const isReadonly = computed(() => isCompleted.value)
 const displayTotal = computed(() => Number(Object.values(answers).reduce((sum, value) => sum + Number(value || 0), 0).toFixed(1)))
@@ -106,7 +112,7 @@ function collectAnswers() {
 
 async function loadList() {
   const res: any = await h5Api.getMyRelations(Number(props.batchId))
-  list.value = (res.data?.list || []).filter((r: any) => r.eval_type === 'peer')
+  list.value = (res.data?.list || []).filter((r: any) => evaluationScene(r) === scene.value)
 }
 
 async function ensureList(force = false) {
@@ -157,25 +163,38 @@ async function submit(draft: boolean) {
   else submitting.value = true
   try {
     if (!draft) {
-      const previewRes: any = await h5Api.previewSubmit(Number(props.relationId), collectAnswers())
-      const preview = previewRes.data
-      if (!preview.can_submit) {
-        await showDialog({
-          title: '当前评分不能提交',
-          message: gradeBlockedMessage(preview),
-          confirmButtonText: '知道了',
-        })
-        return
-      }
-      try {
-        await showConfirmDialog({
-          title: '确认正式提交',
-          message: gradeConfirmMessage(preview),
-          confirmButtonText: '确认提交',
-          cancelButtonText: '返回检查',
-        })
-      } catch {
-        return
+      if (requiresGradePreview(relation.value || {})) {
+        const previewRes: any = await h5Api.previewSubmit(Number(props.relationId), collectAnswers())
+        const preview = previewRes.data
+        if (!preview.can_submit) {
+          await showDialog({
+            title: '当前评分不能提交',
+            message: gradeBlockedMessage(preview),
+            confirmButtonText: '知道了',
+          })
+          return
+        }
+        try {
+          await showConfirmDialog({
+            title: '确认正式提交',
+            message: gradeConfirmMessage(preview),
+            confirmButtonText: '确认提交',
+            cancelButtonText: '返回检查',
+          })
+        } catch {
+          return
+        }
+      } else {
+        try {
+          await showConfirmDialog({
+            title: '确认正式提交',
+            message: `本次评分合计 ${displayTotal.value.toFixed(1)} 分，正式提交后不能直接修改，请认真确认。`,
+            confirmButtonText: '确认提交',
+            cancelButtonText: '返回检查',
+          })
+        } catch {
+          return
+        }
       }
     }
     showLoadingToast({ message: draft ? '保存中...' : '提交中...', forbidClick: true })
@@ -184,7 +203,7 @@ async function submit(draft: boolean) {
     showToast(draft ? '草稿已保存' : '提交成功')
     await Promise.all([ensureList(true), loadDetail()])
   } catch (error: any) {
-    if (!draft && error?.response?.status === 409) {
+    if (!draft && requiresGradePreview(relation.value || {}) && error?.response?.status === 409) {
       try {
         const latest: any = await h5Api.previewSubmit(Number(props.relationId), collectAnswers())
         const value = latest.data
@@ -223,7 +242,7 @@ async function goNext() {
       showToast('没有下一个可评分对象')
       return
     }
-    router.replace(`/peer-eval/${props.batchId}/${next.id}`)
+    router.replace(evaluationPath(next, props.batchId))
   } finally {
     nexting.value = false
   }

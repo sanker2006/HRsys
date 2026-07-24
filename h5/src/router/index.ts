@@ -75,6 +75,12 @@ const router = createRouter({
       props: true,
     },
     {
+      path: '/upward-eval/:batchId/:relationId',
+      name: 'UpwardEval',
+      component: loadPeerEvalView,
+      props: true,
+    },
+    {
       path: '/batch-eval/:batchId/:type',
       name: 'BatchEval',
       component: loadBatchEvalView,

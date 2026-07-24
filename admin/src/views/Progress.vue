@@ -38,6 +38,13 @@
             <div class="type-nums">{{ typeStats.peer.completed }}已完成 · {{ typeStats.peer.pending }}待评 · {{ typeStats.peer.total }}总计</div>
           </div>
         </button>
+        <button class="type-card type-upward" type="button" aria-label="查看向上评价进度" :class="{ active: activeTab === 'upward' }" @click="activeTab = 'upward'">
+          <div class="type-icon">上</div>
+          <div class="type-body">
+            <div class="type-name">向上评价</div>
+            <div class="type-nums">{{ typeStats.upward.completed }}已完成 · {{ typeStats.upward.pending }}待评 · {{ typeStats.upward.total }}总计</div>
+          </div>
+        </button>
         <button class="type-card type-down" type="button" aria-label="查看向下评价进度" :class="{ active: activeTab === 'downward' }" @click="activeTab = 'downward'">
           <div class="type-icon">下</div>
           <div class="type-body">
@@ -85,6 +92,17 @@
           />
         </el-tab-pane>
 
+        <el-tab-pane name="upward" label="向上评价">
+          <ProgressTable
+            :rows="filteredUpwardList"
+            mode="upward"
+            :page="upwardPage"
+            :page-size="upwardPageSize"
+            @update:page="upwardPage = $event"
+            @update:page-size="upwardPageSize = $event"
+          />
+        </el-tab-pane>
+
         <el-tab-pane name="downward" label="向下评估">
           <ProgressTable
             :rows="filteredDownwardList"
@@ -113,11 +131,14 @@ const loading = ref(false)
 const batch = ref<any>(null)
 const selfList = ref<any[]>([])
 const peerList = ref<any[]>([])
+const upwardList = ref<any[]>([])
 const downwardList = ref<any[]>([])
 const selfPage = ref(1)
 const selfPageSize = ref(20)
 const peerPage = ref(1)
 const peerPageSize = ref(20)
+const upwardPage = ref(1)
+const upwardPageSize = ref(20)
 const downwardPage = ref(1)
 const downwardPageSize = ref(20)
 const activeTab = ref('self')
@@ -138,16 +159,17 @@ const roleText: Record<string, string> = {
 const typeStats = ref({
   self: { total: 0, completed: 0, draft: 0, pending: 0 },
   peer: { total: 0, completed: 0, draft: 0, pending: 0 },
+  upward: { total: 0, completed: 0, draft: 0, pending: 0 },
   downward: { total: 0, completed: 0, draft: 0, pending: 0 },
 })
 
 const totalStats = computed(() => ({
-  total: typeStats.value.self.total + typeStats.value.peer.total + typeStats.value.downward.total,
-  completed: typeStats.value.self.completed + typeStats.value.peer.completed + typeStats.value.downward.completed,
+  total: typeStats.value.self.total + typeStats.value.peer.total + typeStats.value.upward.total + typeStats.value.downward.total,
+  completed: typeStats.value.self.completed + typeStats.value.peer.completed + typeStats.value.upward.completed + typeStats.value.downward.completed,
 }))
 const totalProgress = computed(() => totalStats.value.total ? Math.round((totalStats.value.completed / totalStats.value.total) * 100) : 0)
 const progressColor = computed(() => totalProgress.value >= 80 ? '#67c23a' : totalProgress.value >= 40 ? '#e6a23c' : '#909399')
-const allProgressRows = computed(() => [...selfList.value, ...peerList.value, ...downwardList.value])
+const allProgressRows = computed(() => [...selfList.value, ...peerList.value, ...upwardList.value, ...downwardList.value])
 const evaluatorOptions = computed(() => buildPersonOptions(allProgressRows.value, 'evaluator'))
 const departmentOptions = computed(() => buildDepartmentOptions(allProgressRows.value, 'evaluator'))
 const progressFilters = computed(() => ({
@@ -157,11 +179,13 @@ const progressFilters = computed(() => ({
 }))
 const filteredSelfList = computed(() => filterProgressRows(selfList.value, progressFilters.value))
 const filteredPeerList = computed(() => filterProgressRows(peerList.value, progressFilters.value))
+const filteredUpwardList = computed(() => filterProgressRows(upwardList.value, progressFilters.value))
 const filteredDownwardList = computed(() => filterProgressRows(downwardList.value, progressFilters.value))
 
 watch([filterEvaluatorIds, filterDepartments, filterStatuses], () => {
   selfPage.value = 1
   peerPage.value = 1
+  upwardPage.value = 1
   downwardPage.value = 1
 }, { deep: true })
 
@@ -255,10 +279,12 @@ onMounted(async () => {
     const d = progressRes.data
     selfList.value = d?.self?.list || []
     peerList.value = d?.peer?.list || []
+    upwardList.value = d?.upward?.list || []
     downwardList.value = d?.downward?.list || []
     typeStats.value = {
       self: d?.self?.stats || typeStats.value.self,
       peer: d?.peer?.stats || typeStats.value.peer,
+      upward: d?.upward?.stats || typeStats.value.upward,
       downward: d?.downward?.stats || typeStats.value.downward,
     }
   } finally {
@@ -283,6 +309,7 @@ onMounted(async () => {
 .type-card.active { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
 .type-self { background: linear-gradient(135deg, #e6f0ff 0%, #dbeeff 100%); border-color: #bfd9ff; }
 .type-peer { background: linear-gradient(135deg, #e8f7e8 0%, #d8f0d8 100%); border-color: #bde8bd; }
+.type-upward { background: linear-gradient(135deg, #e7f5f2 0%, #d8eee8 100%); border-color: #b7ded4; }
 .type-down { background: linear-gradient(135deg, #fff4e6 0%, #ffefdf 100%); border-color: #ffd9a8; }
 .type-icon { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,.7); font-weight: 700; }
 .type-name { font-size: 15px; font-weight: 700; color: #1a2332; margin-bottom: 4px; }

@@ -42,6 +42,7 @@ import { closeToast, showLoadingToast } from 'vant'
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { h5Api } from '../api'
+import { evaluationPath, evaluationScene, sceneLabel } from '../utils/relationScene'
 
 const router = useRouter()
 const loading = ref(false)
@@ -60,9 +61,7 @@ function statusText(status: string) {
 }
 
 function evalPath(row: any) {
-  if (row.eval_type === 'peer') return `/peer-eval/${row.batchId}/${row.id}`
-  if (row.eval_type === 'downward') return `/downward-eval/${row.batchId}/${row.id}`
-  return `/eval-form/${row.id}`
+  return evaluationPath(row, row.batchId)
 }
 
 async function loadAll() {
@@ -78,7 +77,7 @@ async function loadAll() {
             ...r,
             batchId: b.id,
             batchName: b.name,
-            eval_type_text: evalTypeText(r.eval_type),
+            eval_type_text: sceneLabel(evaluationScene(r)),
           }))
           return flat.length > 0 ? { batchId: b.id, batchName: b.name, relations: flat } : null
         } catch {
@@ -91,13 +90,6 @@ async function loadAll() {
     loading.value = false
     refreshing.value = false
   }
-}
-
-function evalTypeText(type: string) {
-  if (type === 'self') return '自我评价'
-  if (type === 'peer') return '同级互评'
-  if (type === 'downward') return '向下评价'
-  return type || '评价'
 }
 
 onMounted(async () => {

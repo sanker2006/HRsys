@@ -76,15 +76,21 @@
           </div>
         </div>
 
+      </section>
+
+      <section class="section-block">
+        <div class="section-header">
+          <span class="section-mark">上</span>
+          <span class="section-title">向上评价</span>
+          <el-tag type="primary" size="small">员工评议负责人</el-tag>
+        </div>
+        <p class="section-desc">员工评议本部门唯一负责人，只评价综合题，不适用ABCDE分档。</p>
         <div class="eval-group">
           <div class="group-label">
             <span class="role-tag staff">员工</span>
-            <el-checkbox v-model="peerStaffToManagerEnabled" :true-value="1" :false-value="0">
+            <el-checkbox v-model="upwardStaffToManagerEnabled" :true-value="1" :false-value="0">
               启用员工评议本部门负责人
             </el-checkbox>
-          </div>
-          <div class="group-options">
-            <el-tag type="info" size="small">员工评议部门负责人只评价综合题，用于统计中的“员工评议”</el-tag>
           </div>
         </div>
       </section>
@@ -135,7 +141,7 @@ import { evalMatrixApi } from '../api'
 type MatrixRow = {
   from_role: string
   to_role: string
-  eval_type: 'self' | 'peer' | 'downward'
+  eval_type: 'self' | 'peer' | 'upward' | 'downward'
   enabled: number
 }
 
@@ -161,7 +167,7 @@ const defaultRows: MatrixRow[] = [
   { from_role: 'manager', to_role: 'staff', eval_type: 'downward', enabled: 1 },
   { from_role: 'manager', to_role: 'self', eval_type: 'self', enabled: 1 },
   { from_role: 'staff', to_role: 'staff', eval_type: 'peer', enabled: 1 },
-  { from_role: 'staff', to_role: 'manager', eval_type: 'peer', enabled: 1 },
+  { from_role: 'staff', to_role: 'manager', eval_type: 'upward', enabled: 1 },
   { from_role: 'staff', to_role: 'self', eval_type: 'self', enabled: 1 },
 ]
 
@@ -178,9 +184,9 @@ const peerStaffEnabled = computed({
   set: value => setEnabled('staff', 'staff', 'peer', value),
 })
 
-const peerStaffToManagerEnabled = computed({
-  get: () => findRow('staff', 'manager', 'peer')?.enabled ?? 1,
-  set: value => setEnabled('staff', 'manager', 'peer', value),
+const upwardStaffToManagerEnabled = computed({
+  get: () => findRow('staff', 'manager', 'upward')?.enabled ?? 1,
+  set: value => setEnabled('staff', 'manager', 'upward', value),
 })
 
 function rowKey(row: MatrixRow) {
@@ -197,7 +203,12 @@ function setEnabled(fromRole: string, toRole: string, evalType: string, enabled:
 }
 
 function normalizeRows(rows: MatrixRow[]) {
-  const incoming = new Map(rows.map(row => [rowKey(row), row.enabled]))
+  const incoming = new Map(rows.map(row => [
+    row.from_role === 'staff' && row.to_role === 'manager' && row.eval_type === 'peer'
+      ? 'staff:manager:upward'
+      : rowKey(row),
+    row.enabled,
+  ]))
   rawMatrix.value = defaultRows.map(row => ({
     ...row,
     enabled: incoming.get(rowKey(row)) ?? row.enabled,

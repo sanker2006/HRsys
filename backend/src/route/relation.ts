@@ -10,6 +10,7 @@ import { success, fail } from '../utils/response.js';
 import { auth } from '../middleware/auth.js';
 import { admin } from '../middleware/admin.js';
 import type { Context } from 'koa';
+import { withEvaluationCapabilities } from '../service/evaluationScene.js';
 
 const router = new Router({ prefix: '/api/v1/relation' });
 
@@ -26,17 +27,18 @@ router.get('/', async (ctx: Context) => {
   if (eval_type) filters.eval_type = eval_type;
   if (status) filters.status = status;
   const { list, total } = await RelationModel.findByBatchPage(parseInt(batch_id), filters, p, ps);
-  success(ctx, { list, total, page: p, pageSize: ps });
+  success(ctx, { list: list.map(withEvaluationCapabilities), total, page: p, pageSize: ps });
 });
 
 router.get('/my', async (ctx: Context) => {
   const { batch_id } = ctx.query as any;
   const userId = (ctx.state as any).userId;
   if (!batch_id) return fail(ctx, '缺少 batch_id');
-  const list = await RelationModel.findByEvaluator(parseInt(batch_id), userId);
+  const list = (await RelationModel.findByEvaluator(parseInt(batch_id), userId))
+    .map(withEvaluationCapabilities);
   const grouped: Record<string, typeof list> = {};
   for (const r of list) {
-    const key = r.eval_type;
+    const key = r.evaluation_scene;
     if (!grouped[key]) grouped[key] = [];
     grouped[key].push(r);
   }
@@ -154,14 +156,14 @@ router.get('/export/:batchId', async (ctx: Context) => {
   if (eval_type) filters.eval_type = eval_type;
   if (status) filters.status = status;
   const list = await RelationModel.findByBatchId(batchId, filters);
-  const rows = list.map(r => ({
+  const rows = list.map(withEvaluationCapabilities).map(r => ({
     评价人工号: r.evaluator_id,
     评价人姓名: r.evaluator_name,
     评价人部门: r.evaluator_department,
     被评人工号: r.target_id,
     被评人姓名: r.target_name,
     被评人部门: r.target_department,
-    关系类型: r.eval_type,
+    关系类型: r.display_label,
     状态: r.status,
   }));
   success(ctx, rows);

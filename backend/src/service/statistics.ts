@@ -3,6 +3,7 @@ import { AnswerModel, type AnswerRow } from '../model/answer.js';
 import { BatchModel } from '../model/batch.js';
 import { RelationModel, type RelationRow } from '../model/relation.js';
 import type { QuestionScoreMode } from '../model/self_question.js';
+import { classifyEvaluationRelation } from './evaluationScene.js';
 
 type TargetLevel = 'manager' | 'staff';
 
@@ -244,11 +245,14 @@ function buildManagerRow(
     answersMap,
     'total'
   ));
-  const staffReview = performanceOnly ? null : average(completedRelationScores(
-    relationsToTarget(relations, user.id, { evalType: 'peer', evaluatorLevel: 'staff' }),
-    answersMap,
-    'total'
+  const staffReviewRelations = relations.filter(relation => (
+    relation.target_id === user.id
+    && relation.evaluator_level === 'staff'
+    && classifyEvaluationRelation(relation).evaluation_scene === 'upward'
   ));
+  const staffReview = performanceOnly ? null : average(
+    completedRelationScores(staffReviewRelations, answersMap, 'total')
+  );
   const comprehensiveMissing: string[] = [];
   const comprehensiveScore = performanceOnly ? null : weighted([
     { label: '综合-主要领导评价', value: mainComp, weight: 0.4 },

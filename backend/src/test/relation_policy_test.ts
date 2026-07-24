@@ -14,13 +14,13 @@ const standard = buildDesiredRelations(batch, [], users, new Map([
 ]));
 assert(standard.some(row => row.evaluator_id === 1 && row.target_id === 2 && row.eval_type === 'downward'));
 assert(standard.some(row => row.evaluator_id === 1 && row.target_id === 3 && row.eval_type === 'downward'));
-assert(standard.some(row => row.evaluator_id === 2 && row.target_id === 1 && row.eval_type === 'peer'));
-assert(standard.some(row => row.evaluator_id === 3 && row.target_id === 1 && row.eval_type === 'peer'));
+assert(standard.some(row => row.evaluator_id === 2 && row.target_id === 1 && row.eval_type === 'upward'));
+assert(standard.some(row => row.evaluator_id === 3 && row.target_id === 1 && row.eval_type === 'upward'));
 
 const performanceOnly = buildDesiredRelations(batch, [], users, new Map([
   [1, 'performance_only_100_0'], [2, 'standard_70_30'], [3, 'standard_70_30'], [4, 'standard_70_30'],
 ]));
-assert(!performanceOnly.some(row => row.target_id === 1 && row.eval_type === 'peer'));
+assert(!performanceOnly.some(row => row.target_id === 1 && row.eval_type === 'upward'));
 assert(performanceOnly.some(row => row.evaluator_id === 1 && row.target_id === 1 && row.eval_type === 'self'));
 assert(performanceOnly.some(row => row.evaluator_id === 1 && row.target_id === 2 && row.eval_type === 'downward'));
 

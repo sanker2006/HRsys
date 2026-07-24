@@ -28,6 +28,10 @@
         <div class="metric-value">{{ typeCount.peer }}</div>
       </div>
       <div class="metric-card">
+        <div class="metric-label">向上评价</div>
+        <div class="metric-value">{{ typeCount.upward }}</div>
+      </div>
+      <div class="metric-card">
         <div class="metric-label">向下评价</div>
         <div class="metric-value">{{ typeCount.downward }}</div>
       </div>
@@ -48,6 +52,7 @@
         <el-select v-model="filterTypes" placeholder="评价类型" multiple clearable collapse-tags collapse-tags-tooltip>
           <el-option label="自评" value="self" />
           <el-option label="同层互评" value="peer" />
+          <el-option label="向上评价" value="upward" />
           <el-option label="向下评价" value="downward" />
         </el-select>
         <el-select v-model="filterStatuses" placeholder="状态" multiple clearable collapse-tags collapse-tags-tooltip>
@@ -78,9 +83,9 @@
           </template>
         </el-table-column>
         <el-table-column prop="evaluator_department" label="评价部门" width="130" />
-        <el-table-column prop="eval_type" label="类型" width="110">
+        <el-table-column prop="evaluation_scene" label="类型" width="110">
           <template #default="{ row }">
-            <el-tag size="small" :type="typeTag[row.eval_type]">{{ typeText[row.eval_type] }}</el-tag>
+            <el-tag size="small" :type="typeTag[sceneOf(row)]">{{ typeText[sceneOf(row)] }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="target_name" label="被评人" width="110" />
@@ -132,6 +137,7 @@
       <div v-if="preview" class="preview-breakdown">
         <el-tag>自评 +{{ preview.new_relations.self }}</el-tag>
         <el-tag type="warning">同层互评 +{{ preview.new_relations.peer }}</el-tag>
+        <el-tag type="primary">向上评价 +{{ preview.new_relations.upward || 0 }}</el-tag>
         <el-tag type="success">向下评价 +{{ preview.new_relations.downward }}</el-tag>
       </div>
       <section v-if="preview?.existing_evaluators_with_new_tasks?.length" class="impact-section">
@@ -175,6 +181,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { batchApi, relationApi } from '../api'
 import { buildDepartmentOptions, buildPersonOptions, filterRelationRows } from '../utils/relationFilters'
+import { evaluationScene, evaluationSceneText } from '../utils/relationScene'
 
 const props = defineProps<{ batchId: string }>()
 const loading = ref(false)
@@ -193,8 +200,8 @@ const currentPage = ref(1)
 const pageSize = ref(20)
 const canGenerate = computed(() => ['draft', 'active'].includes(batch.value?.status))
 
-const typeTag: Record<string, string> = { self: 'primary', peer: 'warning', downward: 'success' }
-const typeText: Record<string, string> = { self: '自评', peer: '同层互评', downward: '向下评价' }
+const typeTag: Record<string, string> = { self: 'primary', peer: 'warning', upward: 'primary', downward: 'success' }
+const typeText: Record<string, string> = evaluationSceneText
 const statusTag: Record<string, string> = { pending: 'info', draft: 'warning', completed: 'success' }
 const statusText: Record<string, string> = { pending: '待评', draft: '草稿', completed: '已完成' }
 const roleTag: Record<string, string> = { main_leader: 'danger', division_leader: 'warning', manager: 'success', staff: 'info', admin: '' }
@@ -224,10 +231,15 @@ const paginatedList = computed(() => {
   return filteredList.value.slice(start, start + pageSize.value)
 })
 const typeCount = computed(() => ({
-  self: allList.value.filter(r => r.eval_type === 'self').length,
-  peer: allList.value.filter(r => r.eval_type === 'peer').length,
-  downward: allList.value.filter(r => r.eval_type === 'downward').length,
+  self: allList.value.filter(r => sceneOf(r) === 'self').length,
+  peer: allList.value.filter(r => sceneOf(r) === 'peer').length,
+  upward: allList.value.filter(r => sceneOf(r) === 'upward').length,
+  downward: allList.value.filter(r => sceneOf(r) === 'downward').length,
 }))
+
+function sceneOf(row: any) {
+  return evaluationScene(row)
+}
 
 watch([
   filterTypes,
@@ -312,7 +324,7 @@ function handleExport() {
     评价人: r.evaluator_name,
     评价人角色: roleText[r.evaluator_level] || r.evaluator_level,
     评价部门: r.evaluator_department,
-    类型: typeText[r.eval_type],
+    类型: typeText[sceneOf(r)],
     被评人: r.target_name,
     被评人角色: roleText[r.target_level] || r.target_level,
     被评部门: r.target_department,

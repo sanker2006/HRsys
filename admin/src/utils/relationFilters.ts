@@ -1,3 +1,5 @@
+import { evaluationScene, type EvaluationScene } from './relationScene'
+
 export type RelationSide = 'evaluator' | 'target'
 
 export interface RelationFilterRow {
@@ -8,6 +10,9 @@ export interface RelationFilterRow {
   target_name?: string
   target_department?: string
   eval_type?: string
+  evaluation_scene?: EvaluationScene
+  evaluator_level?: string
+  target_level?: string
   status?: string
 }
 
@@ -61,7 +66,7 @@ export function buildDepartmentOptions(rows: RelationFilterRow[], side: Relation
 
 export function filterRelationRows<T extends RelationFilterRow>(rows: T[], filters: RelationFilters): T[] {
   return rows.filter(row =>
-    includesWhenSelected(filters.evalTypes, String(row.eval_type || ''))
+    includesWhenSelected(filters.evalTypes, evaluationScene(row))
     && includesWhenSelected(filters.statuses, String(row.status || ''))
     && includesWhenSelected(filters.evaluatorIds, row.evaluator_id)
     && includesWhenSelected(filters.evaluatorDepartments, String(row.evaluator_department || ''))

@@ -6,6 +6,7 @@ import {
   type SelfQuestionExport,
   type SelfQuestionRow,
 } from '../model/self_question.js';
+import { classifyEvaluationRelation } from './evaluationScene.js';
 
 export interface EvaluationQuestionContext extends SelfQuestionExport {
   performance_questions: Array<QuestionItem & { self_score: number | null; manager_score: number | null }>;
@@ -157,7 +158,8 @@ export function canEvaluateFromContext(
   relation: RelationRow,
   context: EvaluationReadContext
 ): { ok: boolean; reason?: string } {
-  if (relation.eval_type === 'self' || relation.eval_type === 'peer') return { ok: true };
+  const scene = classifyEvaluationRelation(relation).evaluation_scene;
+  if (scene === 'self' || scene === 'peer' || scene === 'upward') return { ok: true };
 
   if (relation.evaluator_level === 'manager' && relation.target_level === 'staff') {
     const selfRelation = context.selfRelationByTarget.get(relation.target_id);
@@ -238,7 +240,8 @@ export function buildQuestionContextFromReadContext(
     self_score: selfBySequence.get(item.answer_seq)?.score ?? null,
     manager_score: managerBySequence.get(item.answer_seq)?.score ?? null,
   });
-  const performanceQuestions = relation.eval_type === 'peer'
+  const comprehensiveOnly = classifyEvaluationRelation(relation).answer_mode === 'comprehensive_detailed';
+  const performanceQuestions = comprehensiveOnly
     ? []
     : exportRow.performance_questions.map(enrich);
   const comprehensiveQuestions = exportRow.comprehensive_questions.map(enrich);
@@ -280,7 +283,7 @@ export function buildQuestionContextFromReadContext(
     ...exportRow,
     performance_questions: performanceQuestions,
     comprehensive_questions: comprehensiveQuestions,
-    questions: relation.eval_type === 'peer'
+    questions: comprehensiveOnly
       ? comprehensiveQuestions
       : [...performanceQuestions, ...comprehensiveQuestions],
     self_total: totalOfAnswers(selfScores),

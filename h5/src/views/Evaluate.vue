@@ -58,6 +58,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { h5Api } from '../api'
 import { preloadWhenIdle } from '../router/loaders'
+import { evaluationScene } from '../utils/relationScene'
 
 const props = defineProps<{ batchId: string }>()
 const router = useRouter()
@@ -66,20 +67,22 @@ const refreshing = ref(false)
 const relations = ref<any[]>([])
 const batch = ref<any>(null)
 
-const typeLabel: Record<string, string> = { self: '自我评价', peer: '同级互评', downward: '向下评价' }
+const typeLabel: Record<string, string> = { self: '自我评价', peer: '同级互评', upward: '向上评价', downward: '向下评价' }
 const typeHelp: Record<string, string> = {
   self: '完成本人业绩与综合评分',
   peer: '按人员逐一评价综合题目',
+  upward: '评议本部门负责人综合表现',
   downward: '查看下属状态后逐人评分',
 }
-const typeIcon: Record<string, string> = { self: '自', peer: '互', downward: '下' }
-const visibleTypes = computed(() => ['self', 'peer', 'downward'].filter(type => grouped.value[type]?.length))
+const typeIcon: Record<string, string> = { self: '自', peer: '互', upward: '上', downward: '下' }
+const visibleTypes = computed(() => ['self', 'peer', 'upward', 'downward'].filter(type => grouped.value[type]?.length))
 
 const grouped = computed(() => {
   const g: Record<string, any[]> = {}
   for (const r of relations.value) {
-    if (!g[r.eval_type]) g[r.eval_type] = []
-    g[r.eval_type].push(r)
+    const scene = evaluationScene(r)
+    if (!g[scene]) g[scene] = []
+    g[scene].push(r)
   }
   return g
 })
@@ -210,6 +213,7 @@ onMounted(async () => {
   font-weight: 900;
 }
 .task-icon.peer { color: var(--hr-accent-strong); background: #dbeafe; }
+.task-icon.upward { color: #17643a; background: #d9f0e4; }
 .task-icon.downward { color: #8a4d00; background: #f5e4bd; }
 .task-title { color: var(--hr-text); font-size: 16px; font-weight: 900; }
 .task-meta { margin-top: 4px; color: var(--hr-muted); font-size: 12px; }

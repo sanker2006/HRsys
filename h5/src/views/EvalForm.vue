@@ -106,6 +106,7 @@ import { closeToast, showConfirmDialog, showLoadingToast, showToast } from 'vant
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { h5Api } from '../api'
+import { evaluationScene, sceneLabel } from '../utils/relationScene'
 import PersonalSummaryDownload from '../components/PersonalSummaryDownload.vue'
 import EvaluationStickyHeader from '../components/EvaluationStickyHeader.vue'
 
@@ -131,11 +132,7 @@ const revoking = ref(false)
 const targetName = computed(() => relation.value?.target_name || '评价')
 const isCompleted = computed(() => relation.value?.status === 'completed')
 const isReadonly = computed(() => isCompleted.value || !!blockedReason.value)
-const relationLabel = computed(() => {
-  if (relation.value?.eval_type === 'self') return '自我评价'
-  if (relation.value?.eval_type === 'peer') return '同级互评'
-  return '向下评价'
-})
+const relationLabel = computed(() => sceneLabel(evaluationScene(relation.value || {})))
 const detailedTotal = computed(() => Object.values(answers).reduce((sum, value) => sum + Number(value || 0), 0))
 const displayTotal = computed(() => Number((mode.value === 'leader_totals' ? leaderPerformance.value + leaderComprehensive.value : detailedTotal.value).toFixed(1)))
 const submitConfirmMessage = computed(() => relation.value?.eval_type === 'self'

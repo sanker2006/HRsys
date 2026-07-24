@@ -17,7 +17,7 @@ export type RelationInput = {
   evaluator_id: number;
   target_id: number;
   role_type: string;
-  eval_type: 'self' | 'peer' | 'downward';
+  eval_type: 'self' | 'peer' | 'upward' | 'downward';
 };
 
 export type GenerationUser = {
@@ -36,7 +36,7 @@ type ExistingRelation = {
   evaluator_id: number;
   target_id: number;
   role_type: string;
-  eval_type: 'self' | 'peer' | 'downward';
+  eval_type: 'self' | 'peer' | 'upward' | 'downward';
   status: 'pending' | 'draft' | 'completed';
 };
 
@@ -64,7 +64,7 @@ export interface RelationGenerationPreview {
   skipped_existing: number;
   obsolete_relations: number;
   inapplicable_pending_relations: number;
-  new_relations: { total: number; self: number; peer: number; downward: number };
+  new_relations: { total: number; self: number; peer: number; upward: number; downward: number };
   new_participants: GenerationUserImpact[];
   existing_evaluators_with_new_tasks: GenerationUserImpact[];
   score_affected_users: GenerationUserImpact[];
@@ -75,6 +75,7 @@ export interface GenResult {
   total: number;
   self: number;
   peer: number;
+  upward: number;
   downward: number;
   skipped_existing: number;
   preserved_existing: number;
@@ -173,10 +174,13 @@ export function buildDesiredRelations(
     }
   }
 
-  if (isEnabled(matrix, 'staff', 'manager', 'peer')) {
+  if (
+    isEnabled(matrix, 'staff', 'manager', 'upward')
+    || isEnabled(matrix, 'staff', 'manager', 'peer')
+  ) {
     for (const evaluator of staff) {
       const manager = managerByDepartment.get(evaluator.department);
-      if (manager && supportsComprehensive(manager)) add(evaluator, manager, 'peer');
+      if (manager && supportsComprehensive(manager)) add(evaluator, manager, 'upward');
     }
   }
 
@@ -292,9 +296,16 @@ async function calculatePreview(batchId: number, db: ReadDb) {
   const policies = questionPolicies(state.questions, state.users);
   const scoreModes = new Map([...policies].map(([userId, policy]) => [userId, policy.score_mode]));
   const desired = buildDesiredRelations(state.batch, state.matrix, state.users, scoreModes);
-  const existingKeys = new Set(state.existing.map(relationKey));
+  const usersById = new Map(state.users.map(user => [user.id, user]));
+  const comparisonKey = (row: RelationInput | ExistingRelation) => {
+    const legacyUpward = row.eval_type === 'peer'
+      && row.role_type === 'staff'
+      && usersById.get(row.target_id)?.level === 'manager';
+    return relationKey(legacyUpward ? { ...row, eval_type: 'upward' } : row);
+  };
+  const existingKeys = new Set(state.existing.map(comparisonKey));
   const desiredKeys = new Set(desired.map(relationKey));
-  const missingRelations = desired.filter(row => !existingKeys.has(relationKey(row)));
+  const missingRelations = desired.filter(row => !existingKeys.has(comparisonKey(row)));
   const validQuestions = new Set([...policies].filter(([, policy]) => policy.valid).map(([userId]) => userId));
   const missingQuestions = state.users
     .filter(user => ['manager', 'staff'].includes(user.level) && !validQuestions.has(user.id))
@@ -310,10 +321,9 @@ async function calculatePreview(batchId: number, db: ReadDb) {
     desiredParticipants.add(row.evaluator_id);
     desiredParticipants.add(row.target_id);
   }
-  const usersById = new Map(state.users.map(user => [user.id, user]));
   const inapplicableRelations = state.existing.filter(row => {
     const target = usersById.get(row.target_id);
-    return row.eval_type === 'peer'
+    return (row.eval_type === 'peer' || row.eval_type === 'upward')
       && target?.level === 'manager'
       && scoreModes.get(row.target_id) === 'performance_only_100_0'
       && row.status === 'pending'
@@ -362,12 +372,13 @@ async function calculatePreview(batchId: number, db: ReadDb) {
     existing_total: state.existing.length,
     desired_total: desired.length,
     skipped_existing: desired.length - missingRelations.length,
-    obsolete_relations: state.existing.filter(row => !desiredKeys.has(relationKey(row)) && !inapplicableIds.has(row.id)).length,
+    obsolete_relations: state.existing.filter(row => !desiredKeys.has(comparisonKey(row)) && !inapplicableIds.has(row.id)).length,
     inapplicable_pending_relations: inapplicableRelations.length,
     new_relations: {
       total: missingRelations.length,
       self: countType('self'),
       peer: countType('peer'),
+      upward: countType('upward'),
       downward: countType('downward'),
     },
     new_participants: newParticipants,
@@ -418,6 +429,7 @@ export async function generateRelations(
       total: missingRelations.length,
       self: missingRelations.filter(row => row.eval_type === 'self').length,
       peer: missingRelations.filter(row => row.eval_type === 'peer').length,
+      upward: missingRelations.filter(row => row.eval_type === 'upward').length,
       downward: missingRelations.filter(row => row.eval_type === 'downward').length,
       skipped_existing: preview.skipped_existing,
       preserved_existing: preview.existing_total - inapplicableRelationIds.length,

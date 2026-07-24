@@ -6,7 +6,7 @@ export interface RelationRow {
   evaluator_id: number;
   target_id: number;
   role_type: 'main_leader' | 'division_leader' | 'leader' | 'manager' | 'staff';
-  eval_type: 'self' | 'peer' | 'downward';
+  eval_type: 'self' | 'peer' | 'upward' | 'downward';
   status: 'pending' | 'draft' | 'completed';
   is_anonymous: number;
   created_at: string;
@@ -36,6 +36,16 @@ function placeholders(values: unknown[]): string {
   return values.map(() => '?').join(',');
 }
 
+function evalTypeCondition(evalType: string): string {
+  if (evalType === 'upward') {
+    return "(r.eval_type = 'upward' OR (r.eval_type = 'peer' AND e.level = 'staff' AND t.level = 'manager'))";
+  }
+  if (evalType === 'peer') {
+    return "(r.eval_type = 'peer' AND NOT (e.level = 'staff' AND t.level = 'manager'))";
+  }
+  return 'r.eval_type = ?';
+}
+
 export const RelationModel = {
   findById(id: number): Promise<RelationRow | undefined> {
     return queryOne<RelationRow>(
@@ -57,7 +67,10 @@ export const RelationModel = {
     const params: any[] = [batchId];
     if (filters?.evaluator_id) { sql += ' AND r.evaluator_id = ?'; params.push(filters.evaluator_id); }
     if (filters?.target_id) { sql += ' AND r.target_id = ?'; params.push(filters.target_id); }
-    if (filters?.eval_type) { sql += ' AND r.eval_type = ?'; params.push(filters.eval_type); }
+    if (filters?.eval_type) {
+      sql += ` AND ${evalTypeCondition(filters.eval_type)}`;
+      if (!['peer', 'upward'].includes(filters.eval_type)) params.push(filters.eval_type);
+    }
     if (filters?.status) { sql += ' AND r.status = ?'; params.push(filters.status); }
     sql += ' ORDER BY r.evaluator_id, r.eval_type, t.name';
     return queryAll<RelationRow>(sql, params);
@@ -70,12 +83,18 @@ export const RelationModel = {
     const params: any[] = [batchId];
     if (filters.evaluator_id) { where.push('r.evaluator_id = ?'); params.push(filters.evaluator_id); }
     if (filters.target_id) { where.push('r.target_id = ?'); params.push(filters.target_id); }
-    if (filters.eval_type) { where.push('r.eval_type = ?'); params.push(filters.eval_type); }
+    if (filters.eval_type) {
+      where.push(evalTypeCondition(filters.eval_type));
+      if (!['peer', 'upward'].includes(filters.eval_type)) params.push(filters.eval_type);
+    }
     if (filters.status) { where.push('r.status = ?'); params.push(filters.status); }
 
     const whereSql = where.join(' AND ');
     const totalRow = await queryOne<{ total: number }>(
-      `SELECT COUNT(*) as total FROM relation r WHERE ${whereSql}`,
+      `SELECT COUNT(*) as total FROM relation r
+       JOIN app_user e ON r.evaluator_id = e.id
+       JOIN app_user t ON r.target_id = t.id
+       WHERE ${whereSql}`,
       params
     );
     const offset = (page - 1) * pageSize;
