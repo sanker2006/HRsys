@@ -99,7 +99,7 @@ function commitAndBlur() {
   margin-bottom: 9px;
 }
 .input-label {
-  color: var(--hr-text);
+  color: #102033;
   font-size: 14px;
   font-weight: 900;
 }
@@ -109,7 +109,7 @@ function commitAndBlur() {
   min-width: 0;
   min-height: 52px;
   padding: 0 13px;
-  border: 2px solid var(--hr-accent);
+  border: 2px solid #036486;
   border-radius: 10px;
   background: #fff;
   box-shadow: inset 0 1px 2px rgba(8, 31, 49, .08);
@@ -122,12 +122,12 @@ function commitAndBlur() {
 .edit-icon {
   flex: 0 0 auto;
   margin-right: 7px;
-  color: var(--hr-accent-strong);
+  color: #064f68;
   font-size: 20px;
 }
 .input-prompt {
   flex: 0 0 auto;
-  color: var(--hr-accent-strong);
+  color: #064f68;
   font-size: 13px;
   font-weight: 900;
 }
@@ -138,7 +138,7 @@ input {
   padding: 0 8px;
   border: 0;
   outline: 0;
-  color: var(--hr-accent-strong);
+  color: #064f68;
   background: transparent;
   caret-color: #007da5;
   font: 900 28px/1.2 "DIN Alternate", "Arial Narrow", sans-serif;
@@ -147,22 +147,22 @@ input {
 }
 .unit {
   flex: 0 0 auto;
-  color: var(--hr-text);
+  color: #102033;
   font-size: 14px;
   font-weight: 900;
 }
 .max-score {
-  color: var(--hr-muted);
+  color: #51657a;
   font-size: 12px;
   font-weight: 800;
   white-space: nowrap;
 }
 .disabled {
   opacity: .72;
-  background: var(--hr-surface-strong);
+  background: #dce8f2;
   cursor: default;
 }
-.disabled .input-shell { border-color: var(--hr-border-strong); background: var(--hr-surface-raised); }
+.disabled .input-shell { border-color: #aebfd0; background: #f3f8fb; }
 @media (max-width: 360px) {
   .score-input { padding: 10px; }
   .input-shell { padding: 0 10px; }
