@@ -32,10 +32,6 @@
   --van-nav-bar-background: #f6f9fc;
   --van-nav-bar-title-text-color: var(--hr-text);
   --van-nav-bar-icon-color: var(--hr-text);
-  --van-slider-active-background: var(--hr-accent);
-  --van-slider-inactive-background: #c9d7e5;
-  --van-slider-button-width: 22px;
-  --van-slider-button-height: 22px;
   --van-radius-md: 10px;
 }
 
@@ -97,11 +93,6 @@ button {
 
 .van-button--primary {
   box-shadow: 0 10px 22px rgba(3, 100, 134, 0.22);
-}
-
-.van-slider__button {
-  border: 3px solid #f7fafc;
-  box-shadow: 0 4px 12px rgba(8, 31, 49, 0.24);
 }
 
 .safe-bottom {

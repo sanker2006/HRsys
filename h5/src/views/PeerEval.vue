@@ -22,12 +22,11 @@
       <article v-for="q in questions" :key="q.answer_seq" class="question-card">
         <div class="card-head">
           <div class="question-text">{{ q.content }}</div>
-          <div class="score-pill">{{ formatNumber(answers[q.answer_seq] ?? 0) }}</div>
         </div>
         <div class="meta-line">
           <span>满分 {{ formatNumber(q.weight) }} 分</span>
         </div>
-        <van-slider v-model="answers[q.answer_seq]" :min="0" :max="q.weight" :step="0.1" :disabled="isReadonly" />
+        <ScoreInput v-model="answers[q.answer_seq]" :max="Number(q.weight)" :disabled="isReadonly" />
       </article>
     </section>
 
@@ -56,6 +55,7 @@ import { h5Api } from '../api'
 import PersonalSummaryDownload from '../components/PersonalSummaryDownload.vue'
 import GradePolicyPanel from '../components/GradePolicyPanel.vue'
 import EvaluationStickyHeader from '../components/EvaluationStickyHeader.vue'
+import ScoreInput from '../components/ScoreInput.vue'
 import { reportClientPerformance } from '../utils/performance'
 import { gradeBlockedMessage, gradeConfirmMessage } from '../utils/gradePreview'
 import { evaluationPath, evaluationScene, requiresGradePreview, sceneLabel } from '../utils/relationScene'
@@ -313,17 +313,6 @@ watch(() => props.relationId, loadPage)
 }
 .card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
 .question-text { flex: 1; min-width: 0; font-size: 16px; line-height: 1.58; color: var(--hr-text); font-weight: 700; }
-.score-pill {
-  min-width: 58px;
-  padding: 7px 10px;
-  border-radius: 12px;
-  text-align: center;
-  color: var(--hr-accent-strong);
-  background: var(--hr-primary-soft);
-  font-size: 19px;
-  font-weight: 900;
-  font-variant-numeric: tabular-nums;
-}
 .meta-line { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; }
 .meta-line span { padding: 6px 10px; border-radius: 999px; background: var(--hr-surface-strong); color: var(--hr-muted); font-size: 12px; font-weight: 700; border: 1px solid rgba(201, 215, 229, .70); }
 .completed { margin: 16px; padding: 13px; border-radius: 12px; text-align: center; color: var(--hr-success); background: #d9f0e4; font-weight: 900; border: 1px solid #a7dfbf; }

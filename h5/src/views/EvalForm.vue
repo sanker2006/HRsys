@@ -26,13 +26,12 @@
           <div class="card-kicker">领导业绩评分</div>
           <div class="question-text">业绩总分，满分70分</div>
         </div>
-        <div class="score-pill">{{ leaderPerformance.toFixed(1) }}</div>
       </div>
-      <van-slider v-model="leaderPerformance" :min="0" :max="70" :step="0.1" :disabled="isReadonly" />
+      <ScoreInput v-model="leaderPerformance" :max="70" :disabled="isReadonly" />
       </article>
       <article class="question-card total-card">
-        <div class="card-head"><div><div class="card-kicker">领导综合评分</div><div class="question-text">综合总分，满分30分</div></div><div class="score-pill">{{ leaderComprehensive.toFixed(1) }}</div></div>
-        <van-slider v-model="leaderComprehensive" :min="0" :max="30" :step="0.1" :disabled="isReadonly" />
+        <div class="card-head"><div><div class="card-kicker">领导综合评分</div><div class="question-text">综合总分，满分30分</div></div></div>
+        <ScoreInput v-model="leaderComprehensive" :max="30" :disabled="isReadonly" />
       </article>
     </section>
 
@@ -42,7 +41,6 @@
         <article v-for="q in performanceQuestions" :key="q.answer_seq" class="question-card">
           <div class="card-head">
             <div class="question-text">{{ q.content }}</div>
-            <div class="score-pill">{{ formatNumber(answers[q.answer_seq] ?? 0) }}</div>
           </div>
           <div class="meta-line">
             <span>满分 {{ formatNumber(q.weight) }} 分</span>
@@ -50,7 +48,7 @@
               {{ item.label }} {{ formatNumber(item.score) }} 分
             </span>
           </div>
-          <van-slider v-model="answers[q.answer_seq]" :min="0" :max="q.weight" :step="0.1" :disabled="isReadonly" />
+          <ScoreInput v-model="answers[q.answer_seq]" :max="Number(q.weight)" :disabled="isReadonly" />
         </article>
       </section>
 
@@ -59,7 +57,6 @@
         <article v-for="q in comprehensiveQuestions" :key="q.answer_seq" class="question-card">
           <div class="card-head">
             <div class="question-text">{{ q.content }}</div>
-            <div class="score-pill">{{ formatNumber(answers[q.answer_seq] ?? 0) }}</div>
           </div>
           <div class="meta-line">
             <span>满分 {{ formatNumber(q.weight) }} 分</span>
@@ -67,7 +64,7 @@
               {{ item.label }} {{ formatNumber(item.score) }} 分
             </span>
           </div>
-          <van-slider v-model="answers[q.answer_seq]" :min="0" :max="q.weight" :step="0.1" :disabled="isReadonly" />
+          <ScoreInput v-model="answers[q.answer_seq]" :max="Number(q.weight)" :disabled="isReadonly" />
         </article>
       </section>
     </template>
@@ -109,6 +106,7 @@ import { h5Api } from '../api'
 import { evaluationScene, sceneLabel } from '../utils/relationScene'
 import PersonalSummaryDownload from '../components/PersonalSummaryDownload.vue'
 import EvaluationStickyHeader from '../components/EvaluationStickyHeader.vue'
+import ScoreInput from '../components/ScoreInput.vue'
 
 const props = defineProps<{ relationId: string }>()
 const router = useRouter()
@@ -277,17 +275,6 @@ onMounted(async () => {
 .card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
 .card-kicker { color: var(--hr-muted); font-size: 12px; font-weight: 800; margin-bottom: 6px; }
 .question-text { flex: 1; min-width: 0; font-size: 16px; line-height: 1.58; color: var(--hr-text); font-weight: 700; }
-.score-pill {
-  min-width: 58px;
-  padding: 7px 10px;
-  border-radius: 12px;
-  text-align: center;
-  color: var(--hr-accent-strong);
-  background: var(--hr-primary-soft);
-  font-size: 19px;
-  font-weight: 900;
-  font-variant-numeric: tabular-nums;
-}
 .meta-line { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; }
 .meta-line span { padding: 6px 10px; border-radius: 999px; background: var(--hr-surface-strong); color: var(--hr-muted); font-size: 12px; font-weight: 700; border: 1px solid rgba(201, 215, 229, .70); }
 .completed { margin: 16px; padding: 13px; border-radius: 12px; text-align: center; color: var(--hr-success); background: #d9f0e4; font-weight: 900; border: 1px solid #a7dfbf; }
