@@ -1,7 +1,12 @@
 <template>
-  <label class="score-input" :class="{ disabled }">
-    <span class="input-label">输入分数</span>
+  <label class="score-input" :class="{ disabled, editing }">
+    <span class="input-heading">
+      <span class="input-label">本题评分</span>
+      <span class="max-score">满分 {{ formatMax }} 分</span>
+    </span>
     <span class="input-shell">
+      <van-icon v-if="!disabled" name="edit" class="edit-icon" aria-hidden="true" />
+      <span v-if="!disabled" class="input-prompt">点击输入</span>
       <input
         ref="inputRef"
         :value="text"
@@ -18,7 +23,6 @@
       />
       <span class="unit">分</span>
     </span>
-    <span class="max-score">满分 {{ formatMax }}</span>
   </label>
 </template>
 
@@ -74,65 +78,95 @@ function commitAndBlur() {
 
 <style scoped>
 .score-input {
-  display: grid;
-  grid-template-columns: auto minmax(112px, 150px) 1fr;
-  align-items: center;
-  gap: 10px;
-  min-height: 54px;
-  padding: 8px 10px 8px 12px;
-  border: 1px solid #9fb8ca;
+  display: block;
+  padding: 12px;
+  border: 2px solid #7ea9c4;
   border-radius: 12px;
-  background: #e7f0f6;
-  transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
+  background: #eaf4fa;
+  cursor: text;
+  transition: border-color .16s ease, box-shadow .16s ease, background .16s ease, transform .16s ease;
 }
 .score-input:focus-within {
-  border-color: var(--hr-accent);
-  background: #f4f9fc;
-  box-shadow: 0 0 0 3px rgba(3, 100, 134, .14);
+  border-color: #007da5;
+  background: #f2f9fc;
+  box-shadow: 0 0 0 4px rgba(0, 125, 165, .16);
+}
+.input-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 9px;
 }
 .input-label {
   color: var(--hr-text);
-  font-size: 13px;
-  font-weight: 800;
+  font-size: 14px;
+  font-weight: 900;
 }
 .input-shell {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   min-width: 0;
-  padding: 4px 9px;
-  border-bottom: 2px solid var(--hr-accent);
+  min-height: 52px;
+  padding: 0 13px;
+  border: 2px solid var(--hr-accent);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: inset 0 1px 2px rgba(8, 31, 49, .08);
+  transition: border-color .16s ease, box-shadow .16s ease;
+}
+.editing .input-shell {
+  border-color: #007da5;
+  box-shadow: inset 0 1px 2px rgba(8, 31, 49, .06), 0 0 0 3px rgba(0, 125, 165, .12);
+}
+.edit-icon {
+  flex: 0 0 auto;
+  margin-right: 7px;
+  color: var(--hr-accent-strong);
+  font-size: 20px;
+}
+.input-prompt {
+  flex: 0 0 auto;
+  color: var(--hr-accent-strong);
+  font-size: 13px;
+  font-weight: 900;
 }
 input {
-  width: 100%;
+  flex: 1;
+  width: 0;
   min-width: 0;
-  padding: 0;
+  padding: 0 8px;
   border: 0;
   outline: 0;
   color: var(--hr-accent-strong);
   background: transparent;
-  font: 900 24px/1.2 "DIN Alternate", "Arial Narrow", sans-serif;
+  caret-color: #007da5;
+  font: 900 28px/1.2 "DIN Alternate", "Arial Narrow", sans-serif;
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
 .unit {
-  margin-left: 4px;
-  color: var(--hr-muted);
-  font-size: 12px;
-  font-weight: 800;
+  flex: 0 0 auto;
+  color: var(--hr-text);
+  font-size: 14px;
+  font-weight: 900;
 }
 .max-score {
   color: var(--hr-muted);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 800;
   white-space: nowrap;
 }
 .disabled {
   opacity: .72;
   background: var(--hr-surface-strong);
+  cursor: default;
 }
-.disabled .input-shell { border-bottom-color: var(--hr-border-strong); }
+.disabled .input-shell { border-color: var(--hr-border-strong); background: var(--hr-surface-raised); }
 @media (max-width: 360px) {
-  .score-input { grid-template-columns: auto minmax(96px, 1fr); }
-  .max-score { grid-column: 1 / -1; justify-self: end; }
+  .score-input { padding: 10px; }
+  .input-shell { padding: 0 10px; }
+  .input-prompt { font-size: 12px; }
+  input { padding: 0 6px; font-size: 26px; }
 }
 </style>
