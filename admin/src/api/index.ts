@@ -29,7 +29,7 @@ export const userApi = {
     return api.get('/user/departments')
   },
   import(users: any[]) {
-    return api.post('/user/import', { users })
+    return api.post('/user/import', { users }, { timeout: 180000 })
   },
   export(params: any) {
     return api.get('/user/export', { params })

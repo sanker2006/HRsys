@@ -1,4 +1,5 @@
 import { execute, queryAll, queryOne, transaction, type DbExecutor } from '../db/query.js';
+import { hashAsync } from '../utils/password.js';
 
 export type UserLevel = 'main_leader' | 'division_leader' | 'manager' | 'staff' | 'admin' | 'leader';
 
@@ -412,7 +413,8 @@ export const UserModel = {
           continue;
         }
         await assertSingleMainLeader(level);
-        await this.create({ ...u, level });
+        const password = u.password || await hashAsync(u.phone.slice(-4));
+        await this.create({ ...u, level, password });
         success++;
       } catch (err: any) {
         errors.push({ row: u.source_row ?? i + 2, message: err.message });

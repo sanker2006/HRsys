@@ -6,6 +6,7 @@ import { success, fail } from '../utils/response.js';
 import { auth } from '../middleware/auth.js';
 import { admin } from '../middleware/admin.js';
 import { importRowNumber } from '../utils/import.js';
+import { queryAll } from '../db/query.js';
 import type { Context } from 'koa';
 
 const router = new Router({ prefix: '/api/v1/user' });
@@ -169,6 +170,15 @@ router.post('/import', async (ctx: Context) => {
   if (!Array.isArray(users)) return fail(ctx, '请传入用户数组');
   const errors: Array<{ row: number; message: string }> = [];
   const processed = [];
+  const [departments, existingUsers] = await Promise.all([
+    DepartmentModel.findAll(),
+    queryAll<{ employee_no: string; phone: string; name: string }>(
+      'SELECT employee_no, phone, name FROM app_user'
+    ),
+  ]);
+  const departmentNames = new Set(departments.map(department => department.name));
+  const existingNumbers = new Set(existingUsers.map(user => user.employee_no));
+  const existingPhones = new Map(existingUsers.map(user => [user.phone, user.name]));
   for (let idx = 0; idx < users.length; idx++) {
     const u = users[idx];
     const sourceRow = importRowNumber(u, idx);
@@ -187,12 +197,23 @@ router.post('/import', async (ctx: Context) => {
       managed_departments: parseManagedDepartments(u['负责部门'] || u.managed_departments),
       source_row: sourceRow,
     };
-    item.password = hash(item.phone.slice(-4));
+    if (existingNumbers.has(item.employee_no)) {
+      errors.push({ row: sourceRow, message: `工号 ${item.employee_no} 已存在` });
+      continue;
+    }
+    const phoneOwner = existingPhones.get(item.phone);
+    if (phoneOwner !== undefined) {
+      errors.push({ row: sourceRow, message: `手机号 ${item.phone} 已被用户「${phoneOwner}」使用` });
+      continue;
+    }
     if (!validPhone(item.phone)) errors.push({ row: sourceRow, message: '手机号必须为有效的11位手机号' });
-    const deptError = await validateDepartmentExists(item.department);
-    if (deptError) errors.push({ row: sourceRow, message: deptError });
-    const managedError = await validateManagedDepartments(item.managed_departments);
-    if (managedError) errors.push({ row: sourceRow, message: managedError });
+    if (!departmentNames.has(item.department)) {
+      errors.push({ row: sourceRow, message: `部门「${item.department || '空'}」不存在，请先在部门管理中创建` });
+    }
+    const invalidManagedDepartment = item.managed_departments.find(department => !departmentNames.has(department));
+    if (invalidManagedDepartment) {
+      errors.push({ row: sourceRow, message: `负责部门配置错误：部门「${invalidManagedDepartment}」不存在，请先在部门管理中创建` });
+    }
     processed.push(item);
   }
   const invalidRows = new Set(errors.map(e => e.row));

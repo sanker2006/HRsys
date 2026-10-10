@@ -18,6 +18,7 @@
     "test:personal-summary": "tsx src/test/personal_summary_validation_test.ts",
     "test:self-question-policy": "tsx src/test/self_question_policy_test.ts",
     "test:managed-departments": "tsx src/test/managed_departments_test.ts",
+    "test:user-import-performance": "tsx src/test/user_import_performance_test.ts",
     "test:relation-policy": "tsx src/test/relation_policy_test.ts",
     "test:evaluation-scene": "tsx src/test/evaluation_scene_test.ts",
     "test:score-grade-policy": "tsx src/test/score_grade_policy_test.ts",

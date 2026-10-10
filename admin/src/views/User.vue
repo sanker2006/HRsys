@@ -7,8 +7,8 @@
       </div>
       <div class="hero-actions">
         <el-button @click="downloadImportTemplate">下载导入模板</el-button>
-        <el-upload action="" :before-upload="handleImport" accept=".csv" :show-file-list="false">
-          <el-button>批量导入</el-button>
+        <el-upload action="" :before-upload="handleImport" accept=".csv" :show-file-list="false" :disabled="importing">
+          <el-button :loading="importing" :disabled="importing">{{ importing ? '正在导入' : '批量导入' }}</el-button>
         </el-upload>
         <el-button type="primary" @click="openDialog()">添加用户</el-button>
       </div>
@@ -183,6 +183,7 @@ const saving = ref(false)
 const showDialog = ref(false)
 const importResultVisible = ref(false)
 const importResult = ref<any>(null)
+const importing = ref(false)
 const editingId = ref<number | null>(null)
 const keyword = ref('')
 const filterDept = ref('')
@@ -338,6 +339,8 @@ function downloadImportTemplate() {
 }
 
 async function handleImport(file: File) {
+  if (importing.value) return false
+  importing.value = true
   try {
     const parsed = parseCsvBuffer(await file.arrayBuffer())
     const items = removeUnchangedExampleRows(parsed.items)
@@ -357,6 +360,8 @@ async function handleImport(file: File) {
     await Promise.all([loadUsers(), loadUserStats()])
   } catch (err: any) {
     ElMessage.error(err?.message || '导入失败')
+  } finally {
+    importing.value = false
   }
   return false
 }
